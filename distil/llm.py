@@ -1,6 +1,5 @@
 """LLM interface using LiteLLM for unified API access."""
 
-import json
 
 from litellm import completion
 
@@ -56,6 +55,7 @@ def generate_distil_batched(
         model: LiteLLM model string.
         batch_size: Number of items to process per batch.
         reading_time: Target reading time in minutes.
+        domain: Domain focus for content summarisation.
 
     Returns:
         Generated distil markdown string.
@@ -123,7 +123,11 @@ def _build_batch_prompt(items: list[dict], batch_number: int) -> str:
 
 def _build_consolidation_prompt(batch_summaries: list[str], reading_time: int) -> str:
     """Build prompt for consolidating batch summaries into final distil."""
-    prompt = f"""Consolidate these batch summaries into a final {reading_time}-minute weekly distil report.
+    prompt = (
+        f"Consolidate these batch summaries into a final {reading_time}-minute "
+        "weekly distil report."
+    )
+    prompt += """
 
 **Instructions:**
 - Merge related themes across batches
@@ -178,7 +182,7 @@ def generate_distil_streaming(
         )
 
         if show_progress:
-            yield f"✅ Connected! Waiting for first response...\n"
+            yield "✅ Connected! Waiting for first response...\n"
 
         chunk_count = 0
         total_chars = 0
@@ -193,7 +197,7 @@ def generate_distil_streaming(
 
                     # Show progress on first chunk
                     if not first_chunk_received and show_progress:
-                        yield f"🚀 First chunk received! Streaming response...\n\n"
+                        yield "🚀 First chunk received! Streaming response...\n\n"
                         first_chunk_received = True
 
                     # Yield the actual content
@@ -201,11 +205,19 @@ def generate_distil_streaming(
 
                     # Show periodic progress updates
                     if show_progress and chunk_count % 20 == 0:
-                        yield f"\n[📊 Progress: {chunk_count} chunks, {total_chars} characters generated]\n"
+                        progress_msg = (
+                            f"\n[📊 Progress: {chunk_count} chunks, "
+                            f"{total_chars} characters generated]\n"
+                        )
+                        yield progress_msg
 
         # Final progress update
         if show_progress:
-            yield f"\n\n✅ Streaming completed! Total: {chunk_count} chunks, {total_chars} characters\n"
+            completion_msg = (
+                f"\n\n✅ Streaming completed! Total: {chunk_count} chunks, "
+                f"{total_chars} characters\n"
+            )
+            yield completion_msg
 
         print(f"Streaming completed. Total chunks: {chunk_count}, chars: {total_chars}")
 
@@ -231,7 +243,11 @@ def generate_distil_batched_streaming(
 
     # Show initial setup
     yield f"🚀 Starting distil generation with {len(items)} items using {model}\n"
-    yield f"📋 Configuration: batch_size={batch_size}, reading_time={reading_time} minutes\n\n"
+    config_msg = (
+        f"📋 Configuration: batch_size={batch_size}, "
+        f"reading_time={reading_time} minutes\n\n"
+    )
+    yield config_msg
 
     # If items are few enough, process normally
     if len(items) <= batch_size:
@@ -284,7 +300,7 @@ def generate_distil_batched_streaming(
 
     # Consolidate all batch summaries
     yield f"{'=' * 50}\n"
-    yield f"🔗 CONSOLIDATION PHASE\n"
+    yield "🔗 CONSOLIDATION PHASE\n"
     yield f"📝 Combining {len(batch_summaries)} batch summaries into final distil...\n"
     yield f"{'=' * 50}\n\n"
 
@@ -295,7 +311,7 @@ def generate_distil_batched_streaming(
     ):
         yield chunk
 
-    yield f"\n\n🎉 DISTIL GENERATION COMPLETE!\n"
+    yield "\n\n🎉 DISTIL GENERATION COMPLETE!\n"
     yield f"📊 Final stats: {len(items)} items processed in {total_batches} batches\n"
 
 

@@ -6,8 +6,8 @@ import typer
 
 from distil.config import get_feeds, get_llm_model, get_output_dir, load_config
 from distil.core import collect_content
-from distil.llm import generate_distil, generate_distil_batched
-from distil.prompts import build_distil_prompt, build_system_prompt
+from distil.llm import generate_distil_batched
+from distil.prompts import build_system_prompt
 
 app = typer.Typer(help="Generate weekly research distils")
 
@@ -28,7 +28,10 @@ def run(
 
     # Check if we have enough items to proceed
     if len(items) == 0:
-        typer.echo("❌ No items collected from any feeds. Check feed health report above.", err=True)
+        typer.echo(
+            "❌ No items collected from any feeds. Check feed health report above.",
+            err=True,
+        )
         typer.echo("Suggestion: Try increasing --days or check feed URLs.", err=True)
         raise typer.Exit(1)
 

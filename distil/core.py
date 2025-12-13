@@ -16,7 +16,7 @@ def fetch_rss(
     keywords: list[str] | None = None,
     timeout: int = 30,
     verbose: bool = True,
-) -> tuple[list[dict], dict[str, str]]:
+) -> tuple[list[dict], dict[str, str | int]]:
     """Fetch RSS feed entries with timeout and validation.
 
     Args:
@@ -46,7 +46,8 @@ def fetch_rss(
         # Check for feed parsing errors
         if hasattr(feed, 'bozo') and feed.bozo:
             status["status"] = "warning"
-            status["message"] = f"Feed parsing issues: {feed.get('bozo_exception', 'Unknown')}"
+            bozo_exception = feed.get('bozo_exception', 'Unknown')
+            status["message"] = f"Feed parsing issues: {bozo_exception}"
             if verbose:
                 print(f"  ⚠️  Warning: {status['message']}")
 
@@ -118,8 +119,9 @@ def fetch_rss(
         if recent_entries:
             print(f"  → {len(recent_entries)} items (after date/keyword filtering)")
         else:
-            status["message"] = f"No items matched filters (found {status['total_entries']} total)"
-            print(f"  → 0 items (no items matched date/keyword filters)")
+            total_entries = status['total_entries']
+            status["message"] = f"No items matched filters (found {total_entries} total)"
+            print("  → 0 items (no items matched date/keyword filters)")
 
     return recent_entries, status
 
@@ -176,7 +178,7 @@ def fetch_youtube_transcript(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
 
-    if verbose:
+    if verbose and process.stdout:
         for line in process.stdout:
             print(line.strip())
 
@@ -283,7 +285,9 @@ def collect_content(
     # Check minimum items threshold
     if len(collected) < min_items_threshold:
         if verbose:
-            print(f"⚠️  Warning: Only {len(collected)} items collected (threshold: {min_items_threshold})")
+            collected_count = len(collected)
+            warning_msg = f"⚠️  Warning: Only {collected_count} items collected"
+            print(f"{warning_msg} (threshold: {min_items_threshold})")
     elif verbose:
         print(f"✅ Successfully collected {len(collected)} items total")
 
@@ -306,7 +310,14 @@ def collect_content(
             )
 
     if verbose:
-        print(f"\n📊 Content collection complete: {len(collected)} items from {len([f for f, s in feed_health_report.items() if s['filtered_entries'] > 0])}/{len(rss_feeds)} feeds")
+        successful_feeds = [
+            f for f, s in feed_health_report.items() if s['filtered_entries'] > 0
+        ]
+        total_feeds = len(rss_feeds)
+        print(
+            f"\n📊 Content collection complete: {len(collected)} items "
+            f"from {len(successful_feeds)}/{total_feeds} feeds"
+        )
 
     return collected, feed_health_report
 
@@ -318,7 +329,9 @@ def _print_feed_health_summary(feed_health_report: dict[str, dict]) -> None:
     print("="*60)
 
     total_feeds = len(feed_health_report)
-    successful_feeds = len([f for f, s in feed_health_report.items() if s['filtered_entries'] > 0])
+    successful_feeds = len([
+        f for f, s in feed_health_report.items() if s['filtered_entries'] > 0
+    ])
     total_items = sum(s['filtered_entries'] for s in feed_health_report.values())
 
     for feed_name, status in feed_health_report.items():
@@ -337,7 +350,9 @@ def _print_feed_health_summary(feed_health_report: dict[str, dict]) -> None:
         if status["message"]:
             print(f"   Message: {status['message']}")
 
-        print(f"   Entries: {status['filtered_entries']}/{status['total_entries']} (filtered/total)")
+        filtered = status['filtered_entries']
+        total = status['total_entries']
+        print(f"   Entries: {filtered}/{total} (filtered/total)")
         print(f"   Fetch time: {status['fetch_time']:.2f}s")
 
         if status.get("keywords"):
@@ -346,5 +361,8 @@ def _print_feed_health_summary(feed_health_report: dict[str, dict]) -> None:
             print(f"   Max items: {status['max_items']}")
         print()
 
-    print(f"📈 Summary: {successful_feeds}/{total_feeds} feeds successful, {total_items} items total")
+    print(
+        f"📈 Summary: {successful_feeds}/{total_feeds} feeds successful, "
+        f"{total_items} items total"
+    )
     print("="*60)

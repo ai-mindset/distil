@@ -1,21 +1,36 @@
 """FastHTML web interface for distil."""
 
-import json
 from datetime import datetime
 from pathlib import Path
 
-from fasthtml.common import *
-from monsterui.all import *
+from fasthtml.common import (
+    H3,
+    H4,
+    A,
+    Button,
+    Card,
+    Details,
+    Div,
+    Form,
+    Li,
+    P,
+    Pre,
+    Script,
+    Style,
+    Summary,
+    Titled,
+    Ul,
+    fast_app,
+)
+from monsterui.all import ButtonT, LabelInput, Theme
 from starlette.concurrency import run_in_threadpool
 
 from distil.config import get_feeds, get_llm_model, load_config
 from distil.core import collect_content
 from distil.llm import (
-    generate_distil,
     generate_distil_batched,
-    generate_distil_batched_streaming,
 )
-from distil.prompts import build_distil_prompt, build_system_prompt
+from distil.prompts import build_system_prompt
 
 # Custom CSS for dark mode and better UX
 custom_css = """
@@ -301,7 +316,7 @@ html[data-theme="dark"] .border-gray-300 {
 """
 
 app, rt = fast_app(
-    hdrs=[
+    hdrs=(
         Script("""
     // Theme management
     function toggleTheme() {
@@ -352,7 +367,8 @@ app, rt = fast_app(
         if (button) {
             const originalText = button.textContent;
             button.dataset.originalText = originalText;
-            button.innerHTML = '<span class="loading-text"><span class="spinner"></span>' + text + '</span>';
+            button.innerHTML = ('<span class="loading-text">' +
+                                '<span class="spinner"></span>' + text + '</span>');
             button.disabled = true;
         }
     }
@@ -367,7 +383,7 @@ app, rt = fast_app(
     """),
         Style(custom_css),
         *Theme.blue.headers(),
-    ]
+    )
 )
 
 # In-memory cache for fetched items between fetch and generate
@@ -382,7 +398,8 @@ def ThemeToggle():
 
 
 @rt("/")
-def get():
+def home_get():
+    """Render the home page."""
     return Titled(
         "Distil",
         ThemeToggle(),
@@ -402,7 +419,7 @@ def get():
 
 
 @rt("/fetch")
-async def post(days: int = 7):
+async def fetch_post(days: int = 7):
     """Fetch content from feeds."""
     print(">>> Starting fetch", flush=True)
     global _cached_items
@@ -422,7 +439,7 @@ async def post(days: int = 7):
     for item in _cached_items:
         source = item.get("source", "unknown")
         items_by_source.setdefault(source, []).append(item)
-    print(f">>> Grouped items by source", flush=True)
+    print(">>> Grouped items by source", flush=True)
 
     preview_sections = []
 
@@ -440,7 +457,9 @@ async def post(days: int = 7):
 
         health_summary.append(
             Li(
-                f"{status_icon} {feed_name}: {status['filtered_entries']}/{status['total_entries']} items ({status['fetch_time']:.1f}s)"
+                f"{status_icon} {feed_name}: "
+                f"{status['filtered_entries']}/{status['total_entries']} items "
+                f"({status['fetch_time']:.1f}s)"
             )
         )
 
@@ -476,7 +495,7 @@ async def post(days: int = 7):
 
 
 @rt("/generate")
-def post():
+def generate_post():
     """Generate distil from cached items (non-streaming version)."""
     global _cached_items
 
@@ -520,7 +539,7 @@ def post():
 
 
 @rt("/history")
-def get():
+def history_list_get():
     """List all saved distils."""
     history_dir = Path("history")
     history_dir.mkdir(exist_ok=True)
@@ -538,7 +557,7 @@ def get():
 
 
 @rt("/history/{filename}")
-def get(filename: str):
+def history_view_get(filename: str):
     """View a specific distil."""
     filepath = Path("history") / filename
 
