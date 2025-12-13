@@ -1,7 +1,8 @@
 """LLM interface using LiteLLM for unified API access."""
 
-
 from litellm import completion
+
+from distil.config import TIMEOUT
 
 
 def generate_distil(
@@ -31,7 +32,7 @@ def generate_distil(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            timeout=720,  # 12-minute timeout instead of default 600
+            timeout=TIMEOUT,
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -178,7 +179,7 @@ def generate_distil_streaming(
                 {"role": "user", "content": user_prompt},
             ],
             stream=True,
-            timeout=720,
+            timeout=TIMEOUT,
         )
 
         if show_progress:

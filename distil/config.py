@@ -3,6 +3,9 @@
 import tomllib
 from pathlib import Path
 
+# 15 minutes
+TIMEOUT = 15 * 60
+
 
 def load_config(path: str = "config.toml") -> dict:
     """Load configuration from TOML file.
