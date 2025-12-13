@@ -1,0 +1,118 @@
+[build-system]
+# Build system configuration - setuptools for compatibility
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distil"
+version = "0.1.0"
+description = "Weekly distil generator for drug discovery and AI research"
+readme = "README.md"
+requires-python = ">=3.13"
+license = {text = "MIT"}
+authors = [{name = "Your Name", email = "you@example.com"}]
+
+dependencies = [
+    # Web UI framework
+    "python-fasthtml>=0.12.36",  # FastHTML for web interface
+    "monsterui>=1.0.32",         # Beautiful UI components for FastHTML
+    
+    # CLI framework
+    "typer>=0.20.0",             # CLI interface with rich help
+    
+    # LLM unified API (supports Ollama, Anthropic, OpenAI, Mistral, etc.)
+    "litellm>=1.80.9",           # Single API for all LLM providers
+    
+    # Content fetching
+    "feedparser>=6.0.12",        # RSS feed parsing
+    "webvtt-py>=0.5.1",          # VTT subtitle parsing
+    "yt-dlp>=2024.12.6",         # YouTube transcript downloading
+    "httpx>=0.28.1",             # Async HTTP client
+    
+    # Config
+    "tomli>=2.2.1; python_version<'3.11'",  # TOML parsing (stdlib in 3.11+)
+]
+
+[project.optional-dependencies]
+# Development dependencies - install with: uv pip install -e ".[dev]"
+dev = [
+    "ruff>=0.14.4",              # Linting and formatting (replaces black, isort, flake8)
+    "ty>=0.0.1a34",              # Type checking (Astral's fast type checker)
+    "ipdb>=0.13.13",             # Enhanced debugger with IPython features
+]
+
+[project.scripts]
+# CLI entry points - allows running `distil` command after install
+distil = "distil.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/youruser/distil"
+Repository = "https://github.com/youruser/distil"
+
+# ============================================================================
+# RUFF CONFIGURATION
+# ============================================================================
+[tool.ruff]
+# Line length matching your preference
+line-length = 90
+
+# Target Python version
+target-version = "py313"
+
+# Directories to exclude from linting
+exclude = [
+    ".venv",
+    "__pycache__",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Enable rule sets:
+# E = pycodestyle errors
+# W = pycodestyle warnings  
+# F = pyflakes (undefined names, unused imports, etc.)
+# I = isort (import sorting)
+# D = pydocstyle (docstring conventions)
+# UP = pyupgrade (modernise syntax)
+select = ["E", "W", "F", "I", "D", "UP"]
+
+# Ignore specific rules if needed
+ignore = [
+    "D100",  # Missing docstring in public module (too noisy for small projects)
+    "D104",  # Missing docstring in public package
+]
+
+[tool.ruff.lint.isort]
+# isort configuration - black-compatible
+force-single-line = false
+known-first-party = ["distil"]
+
+[tool.ruff.lint.pydocstyle]
+# Use Google-style docstrings
+convention = "google"
+
+[tool.ruff.format]
+# Black-compatible formatting
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# ============================================================================
+# TY (TYPE CHECKER) CONFIGURATION
+# ============================================================================
+[tool.ty]
+# Note: ty is pre-release; config options may change
+
+[tool.ty.environment]
+# Target Python version for type checking
+python-version = "3.13"
+
+# ============================================================================
+# SETUPTOOLS CONFIGURATION
+# ============================================================================
+[tool.setuptools.packages.find]
+# Auto-discover packages in the distil/ directory
+where = ["."]
+include = ["distil*"]
+

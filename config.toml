@@ -1,0 +1,43 @@
+[llm]
+# LiteLLM model string: "ollama/llama3", "anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"
+model = "ollama/mistral:latest"
+# Optional: set API keys here or via environment variables (ANTHROPIC_API_KEY, etc.)
+# api_key = ""
+
+[output]
+directory = "~/distils"  # Where to save markdown distils
+reading_time_minutes = 5  # Target distil length
+
+[domain]
+# Your expertise focus — used in summarization prompts
+focus = "drug discovery, pharmacology, AI/ML for therapeutics"
+
+# ------------------------------------------------------------------------------
+# Feeds: Each [[feeds]] entry defines a source with optional filters
+# ------------------------------------------------------------------------------
+
+[[feeds]]
+url = "https://rss.arxiv.org/rss/cs.ai"
+name = "arXiv AI"
+max_items = 5  # Limit items processed per run
+# Keywords: only include if title/abstract contains ANY of these
+keywords = ["drug", "molecule", "protein", "medical", "clinical", "pharma", "SMILES", "docking", "binding", "therapeutic"]
+# Temporarily disabled - feed returning 0 items
+
+[[feeds]]
+url = "https://connect.biorxiv.org/biorxiv_xml.php?subject=pharmacology+biochemistry+toxicology"
+name = "bioRxiv Pharma"
+max_items = 5  # More relevant, allow more
+
+[[feeds]]
+url = "https://news.ycombinator.com/rss"
+name = "Hacker News"
+max_items = 5
+# Regex pattern for more complex filtering (optional)
+# pattern = "(?i)(biotech|drug|pharma|protein|alphafold)"
+
+[[feeds]]
+url = "https://rss.xcancel.com/jeremyphoward/rss"
+name = "Jeremy Howard"
+# No filters — always include everything from trusted sources
+# Temporarily disabled - not whitelisted
