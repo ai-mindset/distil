@@ -4,15 +4,36 @@ Weekly distil generator for drug discovery and AI research. Aggregates content f
 
 ## Quick Start
 
-**Install dependencies:**
+### 1. Install uv (Python package manager)
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**macOS/Linux:**
 ```bash
-# Install uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-# Install Ollama (local LLM server)
+### 2. Install Ollama (local LLM server)
+
+**Windows:**
+- Download and run the installer from [ollama.com/download](https://ollama.com/download)
+
+**macOS:**
+- Download and run the installer from [ollama.com/download](https://ollama.com/download)
+- Or use Homebrew: `brew install ollama`
+
+**Linux:**
+```bash
 curl -fsSL https://ollama.com/install.sh | sh
+```
 
-# Pull Mistral model
+### 3. Pull the Mistral model
+
+Open a terminal (or PowerShell on Windows) and run:
+```bash
 ollama pull mistral:latest
 ```
 
@@ -53,8 +74,20 @@ max_items = 20
 ```
 
 For cloud LLMs, set your API key:
+
+**macOS/Linux:**
 ```bash
 export ANTHROPIC_API_KEY="sk-..."
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:ANTHROPIC_API_KEY="sk-..."
+```
+
+**Windows (Command Prompt):**
+```cmd
+set ANTHROPIC_API_KEY=sk-...
 ```
 
 ## Usage
@@ -99,7 +132,7 @@ max_items = 25                     # Optional: limit items
 
 | Issue | Solution |
 |-------|----------|
-| "Connection refused" from Ollama | Run `ollama serve` in another terminal |
+| "Connection refused" from Ollama | **Windows/macOS**: Start Ollama from Applications menu or system tray<br>**Linux**: Run `ollama serve` in another terminal |
 | Slow generation | Reduce `max_items` per feed, or use fewer feeds |
 | Missing items | Check `keywords` aren't too restrictive |
 | Web app stuck at "Fetching..." | Check feed URLs are accessible; see feed health report |
