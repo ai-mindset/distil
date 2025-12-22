@@ -4,6 +4,8 @@ Weekly distil generator for drug discovery and AI research. Aggregates content f
 
 ## Quick Start
 
+**Requirements:** Python 3.13 or higher
+
 ### 1. Install uv (Python package manager)
 
 **Windows:**
@@ -15,6 +17,8 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+> **Note:** After installation, restart your terminal or follow the on-screen instructions to update your PATH.
 
 ### 2. Install Ollama (local LLM server)
 
@@ -29,6 +33,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
+
+> **Note:** On Windows and macOS, Ollama runs automatically after installation. On Linux, you may need to start it with `ollama serve`.
 
 ### 3. Pull the Mistral model
 
