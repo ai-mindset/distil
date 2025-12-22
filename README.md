@@ -33,7 +33,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### 3. Pull the Mistral model
 
 Open a terminal (or PowerShell on Windows) and run:
-```bash
+```shell
 ollama pull mistral:latest
 ```
 
