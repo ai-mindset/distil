@@ -8,6 +8,7 @@ from distil.config import get_feeds, get_llm_model, get_output_dir, load_config
 from distil.core import collect_content
 from distil.llm import generate_distil_batched
 from distil.prompts import build_system_prompt
+from distil.ollama_setup import ensure_ollama_ready
 
 app = typer.Typer(help="Generate weekly research distils")
 
@@ -42,6 +43,13 @@ def run(
     reading_time = cfg.get("output", {}).get("reading_time_minutes", 5)
     system_prompt = build_system_prompt(domain)
     model = get_llm_model(cfg)
+
+    # Ensure Ollama is ready if using an ollama model
+    if model.startswith("ollama/"):
+        typer.echo("Checking Ollama setup...")
+        if not ensure_ollama_ready(model):
+            typer.echo("❌ Failed to set up Ollama. Please check the error messages above.", err=True)
+            raise typer.Exit(1)
 
     typer.echo(f"Generating distil with {model} using batch processing...")
     try:
