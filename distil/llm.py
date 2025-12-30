@@ -101,7 +101,18 @@ def generate_distil_batched(
 
 def _build_batch_prompt(items: list[dict], batch_number: int) -> str:
     """Build prompt for processing a single batch of items."""
-    prompt = f"""Summarize this batch of content items (Batch {batch_number}):
+    # Create a brief description of what this batch contains
+    title_hints = []
+    for item in items[:2]:  # Use first 2 titles for context
+        title_words = item['title'].split()[:3]  # First 3 words
+        title_hints.append(' '.join(title_words))
+
+    if len(items) > 2:
+        batch_desc = f"topics including {title_hints[0]}, {title_hints[1]}, etc."
+    else:
+        batch_desc = f"topics: {', '.join(title_hints)}"
+
+    prompt = f"""Summarise this set of content items about {batch_desc}
 
 **Instructions:**
 - Create concise summaries highlighting key insights and strategic relevance
@@ -109,6 +120,7 @@ def _build_batch_prompt(items: list[dict], batch_number: int) -> str:
 - Include titles and links: [Title](URL)
 - Use bullet points for readability
 - Focus on what's new, important, or actionable
+- Do NOT mention "batch" in your response
 
 **Content ({len(items)} items):**
 

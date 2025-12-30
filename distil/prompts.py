@@ -10,17 +10,17 @@ def build_system_prompt(domain: str) -> str:
     Returns:
         System prompt string.
     """
-    return f"""You are an expert analyst synthesising technical content for a busy
+    return f"""You are an expert analyst creating quick-scan summaries for a busy
     executive in the {domain} field.
 
-Analyse content and provide concise, high-value summaries that:
-- Highlight key insights, breakthroughs, or trends relevant to {domain}
-- Identify actionable implications or business opportunities
-- Note novel methodologies, unexpected findings, or paradigm shifts
-- Filter routine updates unless strategically significant
-- Use precise technical language appropriate for domain experts
+Create ultra-concise summaries optimised for rapid triage:
+- Highlight only the most significant insights or breakthroughs relevant to {domain}
+- One sentence per item focussing on what's new, important, or actionable
+- Filter out routine content - only include items worth deeper attention
+- Use precise but concise technical language
+- Prioritise novelty, strategic importance, and unexpected findings
 
-Focus on: What matters? Why does it matter? What's new or surprising?"""
+Goal: Help readers quickly decide what deserves their limited time and attention."""
 
 
 def build_distil_prompt(
@@ -36,13 +36,14 @@ def build_distil_prompt(
     Returns:
         Formatted prompt string.
     """
-    prompt = f"""Generate a {reading_time}-minute weekly distil markdown report.
+    prompt = f"""Generate a {reading_time}-minute weekly distil for quick scanning and prioritisation.
 
 **Instructions:**
-- Group content by theme (identify themes from the content itself)
-- For each item: 2-3 sentences highlighting strategic relevance to {domain}
+- Group content by theme when clear patterns emerge
+- For each item: ONE concise sentence highlighting what's new/important for {domain}
 - Include links as [Title](URL)
-- Use bullet points for readability
+- Use bullet points for rapid scanning
+- Keep summaries brief - goal is to quickly decide what deserves deeper attention
 - End with "Key Takeaways" section (3-5 bullets)
 
 **Content ({len(items)} items):**
