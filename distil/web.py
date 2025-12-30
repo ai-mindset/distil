@@ -596,27 +596,61 @@ def start_server(port: int = 5001):
                 return candidate_port
         return None
 
+    def try_kill_distil_processes():
+        """Try to kill any running distil processes (simple approach)."""
+        import subprocess
+        import platform
+
+        try:
+            system = platform.system().lower()
+
+            if system == 'windows':
+                # Kill distil processes on Windows
+                subprocess.run(['taskkill', '/F', '/IM', 'python.exe', '/FI', 'WINDOWTITLE eq distil*'],
+                             capture_output=True, timeout=5)
+                subprocess.run(['taskkill', '/F', '/IM', 'python3.exe', '/FI', 'WINDOWTITLE eq distil*'],
+                             capture_output=True, timeout=5)
+            else:
+                # Kill distil processes on Unix/Linux/macOS
+                subprocess.run(['pkill', '-f', 'distil.*serve'], capture_output=True, timeout=5)
+            return True
+        except Exception:
+            return False
+
     # Check if the requested port is available
     if not is_port_available(port):
-        print(f"❌ Error: Port {port} is already in use")
-        print(f"")
+        print(f"🔍 Port {port} is busy, attempting automatic cleanup...")
 
-        # Try to find an alternative port
-        alternative_port = find_available_port(port + 1)
-        if alternative_port:
-            print(f"💡 Suggested alternatives:")
-            print(f"   distil serve --port {alternative_port}")
-            print(f"")
+        # Try to kill any distil processes
+        if try_kill_distil_processes():
+            import time
+            time.sleep(2)  # Wait for processes to fully terminate
 
-        print(f"🔧 To free up port {port}, you can:")
-        print(f"   • Close the application using that port")
-        print(f"   • Restart your computer to clear any stuck processes")
-        print(f"   • Use a different port with --port option")
-        sys.exit(1)
+            if is_port_available(port):
+                print(f"✅ Cleared previous distil processes, port {port} is now available")
+            else:
+                print(f"⚠️  Port {port} still busy, finding alternative...")
+                alternative_port = find_available_port(port + 1)
+                if alternative_port:
+                    port = alternative_port
+                    print(f"🚀 Using port {port} instead")
+                else:
+                    print(f"❌ No available ports found. Try restarting your computer.")
+                    sys.exit(1)
+        else:
+            print(f"⚠️  Cleanup failed, finding alternative port...")
+            alternative_port = find_available_port(port + 1)
+            if alternative_port:
+                port = alternative_port
+                print(f"🚀 Using port {port} instead")
+            else:
+                print(f"❌ Port {port} is busy and no alternatives found")
+                print(f"💡 Try: sudo lsof -ti:{port} | xargs kill -9  # or restart your computer")
+                sys.exit(1)
 
     try:
         print(f"🚀 Starting server on http://localhost:{port}")
-        uvicorn.run("distil.web:app", host="0.0.0.0", port=port, reload=True)
+        uvicorn.run("distil.web:app", host="0.0.0.0", port=port, reload=False)
     except OSError as e:
         if "Address already in use" in str(e) or "Only one usage of each socket address" in str(e):
             print(f"❌ Port {port} became unavailable during startup")
