@@ -169,9 +169,6 @@ def generate_distil_streaming(
         print(f"System prompt length: {len(system_prompt)} chars")
         print(f"User prompt length: {len(user_prompt)} chars")
 
-        if show_progress:
-            yield f"🔌 Connecting to {model}...\n"
-
         response = completion(
             model=model,
             messages=[
@@ -182,52 +179,21 @@ def generate_distil_streaming(
             timeout=TIMEOUT,
         )
 
-        if show_progress:
-            yield "✅ Connected! Waiting for first response...\n"
-
         chunk_count = 0
-        total_chars = 0
-        first_chunk_received = False
 
         for chunk in response:
             if hasattr(chunk, "choices") and len(chunk.choices) > 0:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, "content") and delta.content:
                     chunk_count += 1
-                    total_chars += len(delta.content)
-
-                    # Show progress on first chunk
-                    if not first_chunk_received and show_progress:
-                        yield "🚀 First chunk received! Streaming response...\n\n"
-                        first_chunk_received = True
-
-                    # Yield the actual content
+                    # Just yield the actual content - no progress indicators
                     yield delta.content
 
-                    # Show periodic progress updates
-                    if show_progress and chunk_count % 20 == 0:
-                        progress_msg = (
-                            f"\n[📊 Progress: {chunk_count} chunks, "
-                            f"{total_chars} characters generated]\n"
-                        )
-                        yield progress_msg
-
-        # Final progress update
-        if show_progress:
-            completion_msg = (
-                f"\n\n✅ Streaming completed! Total: {chunk_count} chunks, "
-                f"{total_chars} characters\n"
-            )
-            yield completion_msg
-
-        print(f"Streaming completed. Total chunks: {chunk_count}, chars: {total_chars}")
+        print(f"Streaming completed. Total chunks: {chunk_count}")
 
     except Exception as e:
         print(f"Streaming LLM call failed: {type(e).__name__}: {e}")
-        if show_progress:
-            yield f"\n\n❌ Error: {str(e)}\n"
-        else:
-            yield f"\n\n❌ Error: {str(e)}"
+        yield f"\n\n❌ Error: {str(e)}"
 
 
 def generate_distil_batched_streaming(
@@ -242,23 +208,14 @@ def generate_distil_batched_streaming(
         yield "❌ No items to process."
         return
 
-    # Show initial setup
-    yield f"🚀 Starting distil generation with {len(items)} items using {model}\n"
-    config_msg = (
-        f"📋 Configuration: batch_size={batch_size}, "
-        f"reading_time={reading_time} minutes\n\n"
-    )
-    yield config_msg
-
     # If items are few enough, process normally
     if len(items) <= batch_size:
         from distil.prompts import build_distil_prompt
 
         user_prompt = build_distil_prompt(items, reading_time)
-        yield f"✅ Processing {len(items)} items normally (no batching needed)\n\n"
 
         for chunk in generate_distil_streaming(
-            system_prompt, user_prompt, model, show_progress=True
+            system_prompt, user_prompt, model, show_progress=False
         ):
             yield chunk
         return
@@ -267,22 +224,9 @@ def generate_distil_batched_streaming(
     batch_summaries = []
     total_batches = (len(items) + batch_size - 1) // batch_size
 
-    yield f"🔄 Will process {len(items)} items in {total_batches} batches\n\n"
-
     for i in range(0, len(items), batch_size):
         batch_items = items[i : i + batch_size]
         batch_number = (i // batch_size) + 1
-
-        yield f"{'=' * 50}\n"
-        yield f"📦 BATCH {batch_number}/{total_batches}\n"
-        yield f"📄 Processing {len(batch_items)} items:\n"
-
-        # Show item titles for transparency
-        for idx, item in enumerate(batch_items, 1):
-            title = item.get("title", "Untitled")[:60]
-            yield f"  {idx}. {title}{'...' if len(item.get('title', '')) > 60 else ''}\n"
-
-        yield f"{'=' * 50}\n\n"
 
         # Create batch prompt
         batch_prompt = _build_batch_prompt(batch_items, batch_number)
@@ -290,30 +234,26 @@ def generate_distil_batched_streaming(
         # Stream the batch summary
         batch_summary = ""
         for chunk in generate_distil_streaming(
-            system_prompt, batch_prompt, model, show_progress=True
+            system_prompt, batch_prompt, model, show_progress=False
         ):
             batch_summary += chunk
             yield chunk
 
         batch_summaries.append(batch_summary)
-        yield f"\n\n✅ Batch {batch_number}/{total_batches} completed!\n"
-        yield f"📊 Progress: {batch_number * batch_size}/{len(items)} items processed\n\n"
+
+        # Add separator between batches for clarity
+        if batch_number < total_batches:
+            yield "\n\n---\n\n"
 
     # Consolidate all batch summaries
-    yield f"{'=' * 50}\n"
-    yield "🔗 CONSOLIDATION PHASE\n"
-    yield f"📝 Combining {len(batch_summaries)} batch summaries into final distil...\n"
-    yield f"{'=' * 50}\n\n"
+    yield "\n\n"
 
     consolidation_prompt = _build_consolidation_prompt(batch_summaries, reading_time)
 
     for chunk in generate_distil_streaming(
-        system_prompt, consolidation_prompt, model, show_progress=True
+        system_prompt, consolidation_prompt, model, show_progress=False
     ):
         yield chunk
-
-    yield "\n\n🎉 DISTIL GENERATION COMPLETE!\n"
-    yield f"📊 Final stats: {len(items)} items processed in {total_batches} batches\n"
 
 
 def test_connection(model: str = "anthropic/claude-sonnet-4-20250514") -> bool:
