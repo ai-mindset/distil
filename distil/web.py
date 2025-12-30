@@ -606,15 +606,8 @@ app, rt = fast_app(
                     eventSource.close();
                     hideLoading('generate-btn');
 
-                    // Add completion message and link
+                    // Add completion message
                     progressText.textContent += `\n\n✅ Saved to ${data.file}`;
-
-                    // Add view history link
-                    const historyLink = document.createElement('a');
-                    historyLink.href = '/history';
-                    historyLink.textContent = 'View in History →';
-                    historyLink.className = 'block mt-4 text-blue-600 hover:text-blue-800';
-                    resultDiv.appendChild(historyLink);
 
                 } else if (data.type === 'error') {
                     // Handle errors
@@ -816,7 +809,6 @@ def generate_post():
     return Card(
         H4(f"✓ Saved to {output_path}"),
         Pre(distil_md, cls="overflow-auto max-h-96 whitespace-pre-wrap"),
-        A("View in History →", href="/history"),
     )
 
 
