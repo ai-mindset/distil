@@ -596,24 +596,42 @@ def start_server(port: int = 5001):
                 return candidate_port
         return None
 
-    def try_kill_distil_processes():
-        """Try to kill any running distil processes (simple approach)."""
+    def kill_process_on_port(target_port):
+        """Kill the specific process using the target port (avoiding self-termination)."""
         import subprocess
         import platform
+        import os
+
+        current_pid = os.getpid()
 
         try:
             system = platform.system().lower()
 
             if system == 'windows':
-                # Kill distil processes on Windows
-                subprocess.run(['taskkill', '/F', '/IM', 'python.exe', '/FI', 'WINDOWTITLE eq distil*'],
-                             capture_output=True, timeout=5)
-                subprocess.run(['taskkill', '/F', '/IM', 'python3.exe', '/FI', 'WINDOWTITLE eq distil*'],
-                             capture_output=True, timeout=5)
+                # Use netstat to find the process using the port on Windows
+                result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if f':{target_port}' in line and 'LISTENING' in line:
+                            parts = line.split()
+                            if len(parts) > 4:
+                                pid = parts[-1]
+                                if pid.isdigit() and int(pid) != current_pid:
+                                    subprocess.run(['taskkill', '/F', '/PID', pid],
+                                                 capture_output=True, timeout=5)
+                                    return True
             else:
-                # Kill distil processes on Unix/Linux/macOS
-                subprocess.run(['pkill', '-f', 'distil.*serve'], capture_output=True, timeout=5)
-            return True
+                # Use lsof to find the process using the port on Unix/Linux/macOS
+                result = subprocess.run(['lsof', '-ti', f':{target_port}'],
+                                      capture_output=True, text=True, timeout=10)
+                if result.returncode == 0 and result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid.isdigit() and int(pid) != current_pid:
+                            # Kill the specific process
+                            subprocess.run(['kill', '-9', pid], capture_output=True, timeout=5)
+                            return True
+            return False
         except Exception:
             return False
 
@@ -621,8 +639,8 @@ def start_server(port: int = 5001):
     if not is_port_available(port):
         print(f"🔍 Port {port} is busy, attempting automatic cleanup...")
 
-        # Try to kill any distil processes
-        if try_kill_distil_processes():
+        # Try to kill the specific process using this port
+        if kill_process_on_port(port):
             import time
             time.sleep(2)  # Wait for processes to fully terminate
 
