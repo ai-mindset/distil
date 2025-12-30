@@ -575,6 +575,59 @@ def history_view_get(filename: str):
 
 def start_server(port: int = 5001):
     """Start the FastHTML server."""
+    import socket
+    import sys
     import uvicorn
 
-    uvicorn.run("distil.web:app", host="0.0.0.0", port=port, reload=True)
+    def is_port_available(port: int, host: str = "0.0.0.0") -> bool:
+        """Check if a port is available for binding."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                return True
+            except OSError:
+                return False
+
+    def find_available_port(start_port: int, max_attempts: int = 10) -> int:
+        """Find an available port starting from start_port."""
+        for attempt in range(max_attempts):
+            candidate_port = start_port + attempt
+            if is_port_available(candidate_port):
+                return candidate_port
+        return None
+
+    # Check if the requested port is available
+    if not is_port_available(port):
+        print(f"❌ Error: Port {port} is already in use")
+        print(f"")
+
+        # Try to find an alternative port
+        alternative_port = find_available_port(port + 1)
+        if alternative_port:
+            print(f"💡 Suggested alternatives:")
+            print(f"   distil serve --port {alternative_port}")
+            print(f"")
+
+        print(f"🔧 To free up port {port}, you can:")
+        print(f"   • Close the application using that port")
+        print(f"   • Restart your computer to clear any stuck processes")
+        print(f"   • Use a different port with --port option")
+        sys.exit(1)
+
+    try:
+        print(f"🚀 Starting server on http://localhost:{port}")
+        uvicorn.run("distil.web:app", host="0.0.0.0", port=port, reload=True)
+    except OSError as e:
+        if "Address already in use" in str(e) or "Only one usage of each socket address" in str(e):
+            print(f"❌ Port {port} became unavailable during startup")
+            alternative_port = find_available_port(port + 1)
+            if alternative_port:
+                print(f"💡 Try: distil serve --port {alternative_port}")
+            else:
+                print(f"💡 Try restarting or use: distil serve --port {port + 100}")
+        else:
+            print(f"❌ Server startup error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n👋 Server stopped")
+        sys.exit(0)
