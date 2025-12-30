@@ -1,6 +1,6 @@
 [llm]
 # LiteLLM model string: "ollama/llama3", "anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"
-model = "ollama/mistral:latest"
+model = "ollama/qwen2.5:3b"
 # Optional: set API keys here or via environment variables (ANTHROPIC_API_KEY, etc.)
 # api_key = ""
 

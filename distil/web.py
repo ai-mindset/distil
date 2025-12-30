@@ -195,25 +195,147 @@ html[data-theme="dark"] .border-gray-300 {
     border-color: var(--border-dark) !important;
 }
 
-/* Theme toggle button */
+/* Minimal theme toggle button */
 .theme-toggle {
     position: fixed;
     top: 1rem;
     right: 1rem;
     z-index: 1000;
-    background: #6366f1;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 48px;
-    height: 48px;
+    background: rgba(0,0,0,0.05);
+    color: #6b7280;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8px);
 }
 
 .theme-toggle:hover {
-    background: #5855eb;
-    transform: scale(1.1);
+    background: rgba(0,0,0,0.08);
+    border-color: rgba(0,0,0,0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+[data-theme="dark"] .theme-toggle {
+    background: rgba(255,255,255,0.05);
+    color: #9ca3af;
+    border-color: rgba(255,255,255,0.1);
+}
+
+[data-theme="dark"] .theme-toggle:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* Minimal, fresh button styling */
+#fetch-btn, #generate-btn {
+    width: auto !important;
+    min-width: 140px;
+    max-width: 200px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(0,0,0,0.1);
+    background: #ffffff;
+    color: #374151;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* Dark mode buttons */
+[data-theme="dark"] #fetch-btn,
+[data-theme="dark"] #generate-btn {
+    background: #1f2937;
+    color: #d1d5db;
+    border-color: rgba(255,255,255,0.1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Enhanced button accessibility */
+#fetch-btn:focus, #generate-btn:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+#fetch-btn:hover, #generate-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-color: rgba(0,0,0,0.2);
+    background: #f9fafb;
+}
+
+[data-theme="dark"] #fetch-btn:hover,
+[data-theme="dark"] #generate-btn:hover {
+    background: #374151;
+    border-color: rgba(255,255,255,0.2);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Active state */
+#fetch-btn:active, #generate-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Ensure buttons don't span full width in forms */
+form button, form .btn {
+    width: auto !important;
+}
+
+/* Constrain input field widths */
+input[type="number"], input[type="text"] {
+    max-width: 200px;
+    width: auto !important;
+}
+
+/* Accessibility improvements */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    line-height: 1.6;
+    font-size: 16px;
+}
+
+/* High contrast focus indicators */
+button:focus, input:focus, a:focus {
+    outline: 2px solid #fbbf24;
+    outline-offset: 2px;
+}
+
+/* Improved link contrast */
+a {
+    color: #2563eb;
+    text-decoration: underline;
+}
+
+[data-theme="dark"] a {
+    color: #60a5fa;
+}
+
+/* Screen reader only text */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* Loading indicators */
@@ -242,13 +364,16 @@ html[data-theme="dark"] .border-gray-300 {
     background: #f1f5f9;
     border-left: 4px solid #3b82f6;
     padding: 1rem;
-    margin: 1rem 0;
+    margin: 1.5rem 0;
     border-radius: 0.5rem;
     font-family: monospace;
     white-space: pre-wrap;
     max-height: 500px;
     overflow-y: auto;
     position: relative;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    clear: both;
+    text-align: center; /* Center content within container */
 }
 
 [data-theme="dark"] .streaming-output {
@@ -257,8 +382,8 @@ html[data-theme="dark"] .border-gray-300 {
     color: #e2e8f0;
 }
 
-/* Live progress indicator */
-.progress-indicator {
+/* Live progress indicator (fixed positioning for notifications) */
+.progress-indicator-fixed {
     position: fixed;
     top: 60px;
     right: 1rem;
@@ -274,9 +399,28 @@ html[data-theme="dark"] .border-gray-300 {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+/* Progress banner for streaming (small, compact) */
+.progress-indicator {
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: center;
+    display: inline-block;
+    margin: 0.5rem 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    position: relative;
+    z-index: 10;
+}
+
 [data-theme="dark"] .progress-indicator {
     background: #1e293b;
-    border: 1px solid #374151;
+    color: #cbd5e1;
+    border-color: #334155;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .progress-indicator.pulsing {
@@ -348,14 +492,14 @@ app, rt = fast_app(
 
     // Apply theme immediately (before DOMContentLoaded)
     (function() {
-        const savedTheme = localStorage.getItem('theme') || 'light';
+        const savedTheme = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
         console.log('Applied saved theme:', savedTheme);
     })();
 
     // Load saved theme and update UI
     document.addEventListener('DOMContentLoaded', function() {
-        const savedTheme = localStorage.getItem('theme') || 'light';
+        const savedTheme = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
         updateThemeIcon(savedTheme);
         console.log('DOM loaded, theme applied:', savedTheme);
@@ -380,6 +524,132 @@ app, rt = fast_app(
             button.disabled = false;
         }
     }
+
+    // HTMX loading states integration
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup HTMX event listeners for automatic loading states (fetch button only)
+        document.body.addEventListener('htmx:beforeRequest', function(event) {
+            const trigger = event.detail.elt;
+            if (trigger && trigger.id === 'fetch-btn') {
+                showLoading(trigger.id, 'Fetching feeds...');
+            }
+        });
+
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            const trigger = event.detail.elt;
+            if (trigger && trigger.id === 'fetch-btn') {
+                hideLoading(trigger.id);
+            }
+        });
+
+        // Handle errors to make sure loading state is cleared (fetch button only)
+        document.body.addEventListener('htmx:responseError', function(event) {
+            const trigger = event.detail.elt;
+            if (trigger && trigger.id === 'fetch-btn') {
+                hideLoading(trigger.id);
+            }
+        });
+
+        document.body.addEventListener('htmx:sendError', function(event) {
+            const trigger = event.detail.elt;
+            if (trigger && trigger.id === 'fetch-btn') {
+                hideLoading(trigger.id);
+            }
+        });
+    });
+
+    // Streaming progress handling
+    function startStreamingGenerate() {
+        const generateBtn = document.getElementById('generate-btn');
+        const resultDiv = document.getElementById('result');
+
+        // Show initial loading state
+        showLoading('generate-btn', 'Starting generation...');
+
+        // Clear previous results and set up progress display
+        resultDiv.innerHTML = `
+            <div style="text-align: center; margin: 1rem 0;">
+                <div class="progress-indicator">
+                    🔄 Generating distil...
+                </div>
+            </div>
+            <div class="streaming-output" style="display: none;">
+                <pre id="progress-text" class="whitespace-pre-wrap"></pre>
+            </div>
+        `;
+
+        // Start Server-Sent Events connection
+        const eventSource = new EventSource('/generate-streaming');
+        const progressText = document.getElementById('progress-text');
+
+        let firstContentReceived = false;
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'progress') {
+                    // Show streaming output container and hide progress indicator on first content
+                    if (!firstContentReceived) {
+                        document.querySelector('.progress-indicator').parentElement.style.display = 'none';
+                        document.querySelector('.streaming-output').style.display = 'block';
+                        document.querySelector('.streaming-output').style.textAlign = 'left';
+                        firstContentReceived = true;
+                    }
+
+                    // Append progress update
+                    progressText.textContent += data.content;
+                    // Auto-scroll to bottom
+                    progressText.scrollTop = progressText.scrollHeight;
+
+                } else if (data.type === 'complete') {
+                    // Generation completed
+                    eventSource.close();
+                    hideLoading('generate-btn');
+
+                    // Add completion message and link
+                    progressText.textContent += `\n\n✅ Saved to ${data.file}`;
+
+                    // Add view history link
+                    const historyLink = document.createElement('a');
+                    historyLink.href = '/history';
+                    historyLink.textContent = 'View in History →';
+                    historyLink.className = 'block mt-4 text-blue-600 hover:text-blue-800';
+                    resultDiv.appendChild(historyLink);
+
+                } else if (data.type === 'error') {
+                    // Handle errors
+                    eventSource.close();
+                    hideLoading('generate-btn');
+
+                    // Show error in progress indicator if content hasn't started yet
+                    if (!firstContentReceived) {
+                        const indicator = document.querySelector('.progress-indicator');
+                        if (indicator) {
+                            indicator.innerHTML = '❌ Generation failed';
+                        }
+                    } else {
+                        progressText.textContent += `\n\n❌ Error: ${data.message}`;
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing SSE data:', e);
+            }
+        };
+
+        eventSource.onerror = function(event) {
+            console.error('SSE connection error:', event);
+            eventSource.close();
+            hideLoading('generate-btn');
+
+            const indicator = document.querySelector('.progress-indicator');
+            if (indicator) {
+                indicator.innerHTML = '❌ Connection error';
+            }
+        };
+
+        // Return eventSource so it can be closed if needed
+        return eventSource;
+    }
     """),
         Style(custom_css),
         *Theme.blue.headers(),
@@ -393,7 +663,10 @@ _cached_items = []
 def ThemeToggle():
     """Theme toggle button."""
     return Button(
-        "🌙", cls="theme-toggle", onclick="toggleTheme()", title="Toggle dark/light mode"
+        "🌙", cls="theme-toggle", onclick="toggleTheme()",
+        title="Toggle dark/light mode",
+        aria_label="Toggle between dark and light theme",
+        role="switch", aria_checked="false"
     )
 
 
@@ -406,15 +679,22 @@ def home_get():
         Card(
             H3("Generate Weekly Distil"),
             Form(
-                LabelInput("Days back", type="number", name="days", value="7"),
-                Button("Fetch Items", type="submit", id="fetch-btn", cls=ButtonT.primary),
-                hx_post="/fetch",
-                hx_target="#preview",
+                LabelInput("Days back", type="number", name="days", value="7",
+                          min="1", max="30", aria_describedby="days-help"),
+                Div("Number of days to look back for content (1-30)",
+                   id="days-help", cls="text-sm text-gray-600 mb-2"),
+                Button("Fetch Items", type="submit", id="fetch-btn", cls=ButtonT.primary,
+                       hx_post="/fetch", hx_target="#preview", hx_include="closest form",
+                       aria_describedby="fetch-help"),
+                Div("Fetches content from configured RSS feeds",
+                   id="fetch-help", cls="sr-only"),
             ),
+            role="form", aria_label="Content fetching form"
         ),
-        Div(id="preview"),
-        Div(id="result"),
-        A("View History →", href="/history", cls="block mt-4"),
+        Div(id="preview", role="region", aria_live="polite", aria_label="Fetched content preview"),
+        Div(id="result", role="region", aria_live="polite", aria_label="Generation results"),
+        A("View History →", href="/history", cls="block mt-4",
+          aria_label="View previously generated distils"),
     )
 
 
@@ -483,14 +763,16 @@ async def fetch_post(days: int = 7):
     return Card(
         H4(f"✓ Fetched {len(_cached_items)} items"),
         *preview_sections,
-        Form(
-            Button(
-                "Generate Distil", type="submit", id="generate-btn", cls=ButtonT.primary
-            ),
-            hx_post="/generate",
-            hx_target="#result",
-            hx_disabled_elt="this",
+        Button(
+            "Generate Distil",
+            id="generate-btn",
+            cls=ButtonT.primary,
+            onclick="startStreamingGenerate()",
+            aria_describedby="generate-help",
+            aria_label="Generate distil summary from fetched items"
         ),
+        Div("Processes fetched content into a summarized distil using AI",
+           id="generate-help", cls="sr-only"),
     )
 
 
@@ -571,6 +853,73 @@ def history_view_get(filename: str):
         Pre(content, cls="overflow-auto whitespace-pre-wrap"),
         A("← Back to History", href="/history"),
     )
+
+
+@rt("/generate-streaming")
+async def generate_streaming():
+    """Generate distil with real-time streaming progress."""
+    from fasthtml.common import StreamingResponse
+    from distil.llm import generate_distil_batched_streaming
+    from distil.prompts import build_system_prompt
+    from distil.config import load_config, get_llm_model
+    from datetime import datetime
+    import asyncio
+    import json
+
+    global _cached_items
+
+    if not _cached_items:
+        # Return error as SSE
+        def error_stream():
+            data = {"type": "error", "message": "No items fetched. Please fetch first."}
+            yield f"data: {json.dumps(data)}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    cfg = load_config()
+    domain = cfg.get("domain", {}).get("focus", "drug discovery")
+    reading_time = cfg.get("output", {}).get("reading_time_minutes", 5)
+    system_prompt = build_system_prompt(domain)
+    model = get_llm_model(cfg)
+
+    async def progress_stream():
+        """Stream progress updates as Server-Sent Events."""
+        try:
+            full_content = ""
+
+            # Stream progress from the existing streaming function
+            # Note: generate_distil_batched_streaming is a generator, so we iterate normally
+            for chunk in generate_distil_batched_streaming(
+                system_prompt,
+                _cached_items,
+                model=model,
+                batch_size=3,
+                reading_time=reading_time,
+            ):
+                # Send progress update with proper JSON encoding
+                data = {"type": "progress", "content": chunk}
+                yield f"data: {json.dumps(data)}\n\n"
+                full_content += chunk
+
+                # Small delay to allow frontend to process and prevent blocking
+                await asyncio.sleep(0.01)
+
+            # Save to history
+            history_dir = Path("history")
+            history_dir.mkdir(exist_ok=True)
+            date_str = datetime.now().strftime("%Y-%m-%d_%H%M")
+            output_path = history_dir / f"distil-{date_str}.md"
+            output_path.write_text(full_content)
+
+            # Send completion with proper JSON encoding
+            data = {"type": "complete", "file": output_path.name, "content": full_content}
+            yield f"data: {json.dumps(data)}\n\n"
+
+        except Exception as e:
+            # Send error with proper JSON encoding
+            data = {"type": "error", "message": str(e)}
+            yield f"data: {json.dumps(data)}\n\n"
+
+    return StreamingResponse(progress_stream(), media_type="text/event-stream")
 
 
 def start_server(port: int = 5001):
