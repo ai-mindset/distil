@@ -1,10 +1,10 @@
 # ⚗️ Distil
 
-Weekly distil generator for drug discovery and AI research. Aggregates content from RSS feeds and YouTube transcripts, filters by relevance, and generates executive summaries using local or cloud LLMs.
+Intelligent content distillation tool. Aggregates content from RSS feeds and YouTube transcripts, filters by relevance, and generates executive summaries using local or cloud LLMs with real-time streaming and batch processing. Perfect for research, industry analysis, or staying current in any domain.
 
 ## Quick Start
 
-**Requirements:** Python 3.8+ (usually pre-installed)
+**Requirements:** Python 3.13+ (check with `python --version`)
 
 **Step 1: Install uv (Python package manager)**
 
@@ -30,7 +30,7 @@ Distil automatically installs Ollama and downloads models as needed.
 
 ## Prerequisites
 
-- Python 3.11+ (usually pre-installed)
+- Python 3.13+ (check with `python --version`)
 - Internet connection for initial setup
 - *Everything else (uv, Ollama, models) is automatically installed*
 
@@ -55,15 +55,21 @@ Copy `config.toml` to your working directory and edit:
 
 ```toml
 [llm]
-model = "ollama/mistral:latest"  # Local (free) — or "anthropic/claude-sonnet-4-20250514" (requires API key)
+model = "ollama/qwen2.5:3b"  # Local (free) — or "anthropic/claude-sonnet-4-20250514" (requires API key)
+
+[output]
+directory = "~/distils"        # Where to save distils
+reading_time_minutes = 5       # Target reading time
 
 [domain]
-focus = "drug discovery, pharmacology, AI/ML for therapeutics"
+focus = "drug discovery, pharmacology, AI/ML for therapeutics"  # Customize for your domain
 
 [[feeds]]
 url = "https://rss.arxiv.org/rss/cs.ai"
+name = "arXiv AI"
 keywords = ["drug", "molecule", "protein", "binding"]  # Only items matching these
-max_items = 20
+max_items = 5
+# pattern = "(?i)(biotech|drug|pharma)"  # Optional: regex pattern for advanced filtering
 ```
 
 For cloud LLMs, set your API key:
@@ -109,19 +115,29 @@ Edit `config.toml` to add feeds:
 [[feeds]]
 url = "https://example.com/rss"
 name = "My Feed"
-keywords = ["relevant", "terms"]  # Optional: filter by keywords
-max_items = 25                     # Optional: limit items
+keywords = ["relevant", "terms"]      # Optional: filter by keywords
+max_items = 25                        # Optional: limit items
+# pattern = "(?i)(regex|pattern)"     # Optional: regex for advanced filtering
+
+# YouTube playlists/channels also supported
+[[feeds]]
+url = "https://youtube.com/@channel"
+name = "YouTube Channel"
+max_items = 10
 ```
 
 ## Features
 
 - **⚡ Zero-Config Setup**: Automatically installs Ollama and downloads models on first run
 - **🌍 Cross-Platform**: Works on Linux, macOS, and Windows
-- **🌙 Dark Mode**: Toggle between light/dark themes in the web UI
-- **📊 Feed Health Monitoring**: Real-time status of each RSS feed
-- **🔄 Batch Processing**: Handles large content volumes without timeout
-- **📈 Streaming Progress**: Live updates during distil generation
-- **📁 History Management**: View and manage past distils
+- **📺 YouTube Support**: Extract transcripts from YouTube videos and playlists
+- **🌙 Dark Mode**: Comprehensive dark/light theme with localStorage persistence
+- **📊 Feed Health Monitoring**: Real-time status tracking with detailed health reports
+- **🔄 Batch Processing**: Intelligent batching prevents LLM context window limits
+- **📈 Real-time Streaming**: Server-Sent Events (SSE) for live progress updates
+- **🚀 Smart Port Management**: Automatic port conflict detection and resolution
+- **📁 History Management**: View and manage past distils with web interface
+- **🎯 Advanced Filtering**: Keyword and regex pattern matching for precise content selection
 
 ## Troubleshooting
 
@@ -132,4 +148,4 @@ max_items = 25                     # Optional: limit items
 | Missing items | Check `keywords` aren't too restrictive |
 | Web app stuck at "Fetching..." | Check feed URLs are accessible; see feed health report |
 | Timeout errors | System now uses batch processing to prevent this |
-| Windows installation | Distil will prompt you to download Ollama manually from https://ollama.com/download |
+| Windows Ollama setup | Manual download required from https://ollama.com/download (auto-install not supported) |

@@ -46,8 +46,8 @@ dev = [
 distil = "distil.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/youruser/distil"
-Repository = "https://github.com/youruser/distil"
+Homepage = "https://github.com/ai-mindset/distil"
+Repository = "https://github.com/ai-mindset/distil"
 
 # ============================================================================
 # RUFF CONFIGURATION
