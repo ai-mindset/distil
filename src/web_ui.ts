@@ -1,0 +1,264 @@
+export function homePage(): string {
+  return page(
+    "Distil",
+    [
+      '<button id="theme" class="theme" aria-label="Toggle theme">◐</button>',
+      "<main>",
+      "<h1>Distil</h1>",
+      '<p class="lede">Turn the sources you trust into a focused research digest.</p>',
+      '<section class="card">',
+      "<h2>Collect</h2>",
+      '<label for="days">Days to look back</label>',
+      '<div class="row"><input id="days" type="number" min="1" max="30" value="7">',
+      '<button id="fetch">Fetch items</button></div>',
+      '<p id="fetch-status" class="status" aria-live="polite"></p>',
+      '<div id="preview"></div>',
+      "</section>",
+      '<section class="card">',
+      "<h2>Generate</h2>",
+      '<button id="generate" disabled>Generate digest</button>',
+      '<p id="generate-status" class="status" aria-live="polite"></p>',
+      '<pre id="output" tabindex="0"></pre>',
+      "</section>",
+      '<a href="/history">View history →</a>',
+      "</main>",
+    ].join("\n"),
+    HOME_SCRIPT,
+  );
+}
+
+export function historyPage(files: string[]): string {
+  const list = files.length === 0
+    ? "<p>No digests yet.</p>"
+    : `<ul>${
+      files.map((file) =>
+        `<li><a href="/history/${encodeURIComponent(file)}">${escapeHtml(file)}</a></li>`
+      ).join("")
+    }</ul>`;
+  return page(
+    "History · Distil",
+    [
+      "<main>",
+      "<h1>History</h1>",
+      list,
+      '<a href="/">← Back</a>',
+      "</main>",
+    ].join("\n"),
+  );
+}
+
+export function viewPage(filename: string, content: string): string {
+  return page(
+    `${filename} · Distil`,
+    [
+      "<main>",
+      `<h1>${escapeHtml(filename)}</h1>`,
+      `<pre tabindex="0">${escapeHtml(content)}</pre>`,
+      '<a href="/history">← Back to history</a>',
+      "</main>",
+    ].join("\n"),
+  );
+}
+
+export function notFoundPage(): string {
+  return page(
+    "Not found · Distil",
+    [
+      "<main>",
+      "<h1>Not found</h1>",
+      "<p>The requested page does not exist.</p>",
+      '<a href="/">← Back</a>',
+      "</main>",
+    ].join("\n"),
+  );
+}
+
+function page(title: string, body: string, script = ""): string {
+  return [
+    "<!doctype html>",
+    '<html lang="en" data-theme="dark" data-palette="fasthtml-blue">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${escapeHtml(title)}</title>`,
+    `<style>${CSS}</style>`,
+    "</head>",
+    `<body>${body}${script ? `<script>${script}</script>` : ""}</body>`,
+    "</html>",
+  ].join("\n");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) =>
+    ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    })[character]!);
+}
+
+const CSS = String.raw`
+  :root { color-scheme:light; --blue-600:#2563eb; --blue-500:#3b82f6;
+    --blue-400:#60a5fa; --bg:#fff; --ink:#1f2937; --card:#fff; --input:#fff;
+    --muted:#475569; --line:#d1d5db; --accent:var(--blue-600);
+    --accent-hover:var(--blue-600); --accent-ink:#fff; --link:var(--blue-600);
+    --focus:#fbbf24; --focus-ring:#1f2937; --pre-bg:#f1f5f9; --pre-ink:#1f2937;
+    --shadow:#00000012; }
+  :root[data-theme="dark"] { color-scheme:dark; --bg:#111827; --ink:#f9fafb;
+    --card:#1f2937; --input:#374151; --muted:#d1d5db; --line:#374151;
+    --accent:var(--blue-600); --accent-hover:var(--blue-600); --accent-ink:#fff;
+    --link:var(--blue-400); --focus:#fbbf24; --focus-ring:#f9fafb;
+    --pre-bg:#0f172a; --pre-ink:#e2e8f0; --shadow:#0000004d; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 ui-sans-serif,system-ui,sans-serif; }
+  main { width:min(780px,calc(100% - 2rem)); margin:4rem auto; }
+  h1 { margin:0; font:700 clamp(2.6rem,8vw,5rem)/.95 ui-serif,Georgia,serif;
+    letter-spacing:-.045em; } h2 { margin-top:0; font-size:1.05rem; }
+  .lede { color:var(--muted); font-size:1.1rem; margin:1rem 0 2rem; }
+  .card { border:1px solid var(--line); background:var(--card); border-radius:14px;
+    padding:1.25rem; margin:1rem 0; box-shadow:0 8px 28px var(--shadow); }
+  .row { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+  label { display:block; color:var(--muted); margin-bottom:.35rem; }
+  input,button { font:inherit; border-radius:9px; border:1px solid var(--line);
+    padding:.68rem .9rem; } input { width:8rem; background:var(--input); color:var(--ink); }
+  button { cursor:pointer; background:var(--accent); color:var(--accent-ink);
+    border-color:transparent; font-weight:700; } button:hover:not(:disabled) {
+    background:var(--accent-hover); transform:translateY(-1px); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible {
+    outline:3px solid var(--focus-ring); outline-offset:3px;
+    box-shadow:0 0 0 3px var(--focus); }
+  .theme { position:fixed; right:1rem; top:1rem; width:2.75rem; padding:.55rem; }
+  .status { min-height:1.5rem; color:var(--muted); }
+  details { border-top:1px solid var(--line); padding:.6rem 0; }
+  summary { cursor:pointer; font-weight:700; } ul { padding-left:1.3rem; }
+  pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--pre-bg);
+    color:var(--pre-ink); border:1px solid var(--line); padding:1rem; border-radius:10px;
+    max-height:34rem; overflow:auto; }
+  pre:empty { display:none; } a { color:var(--link); text-decoration-thickness:.1em;
+    text-underline-offset:.18em; }
+  @media (max-width:520px) { main { margin:3rem auto; } .card { padding:1rem; } }
+`;
+
+const HOME_SCRIPT = String.raw`
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem("distil-theme") || "dark";
+  root.dataset.theme = savedTheme;
+  document.querySelector("#theme").addEventListener("click", () => {
+    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    localStorage.setItem("distil-theme", root.dataset.theme);
+  });
+
+  const fetchButton = document.querySelector("#fetch");
+  const generateButton = document.querySelector("#generate");
+  const fetchStatus = document.querySelector("#fetch-status");
+  const generateStatus = document.querySelector("#generate-status");
+  const preview = document.querySelector("#preview");
+  const output = document.querySelector("#output");
+
+  fetchButton.addEventListener("click", async () => {
+    fetchButton.disabled = true;
+    generateButton.disabled = true;
+    fetchStatus.textContent = "Fetching sources…";
+    preview.replaceChildren();
+    try {
+      const response = await fetch("/api/fetch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ days: Number(document.querySelector("#days").value) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Fetch failed");
+      fetchStatus.textContent = "Fetched " + data.itemCount + " items.";
+      const healthDetails = document.createElement("details");
+      const healthSummary = document.createElement("summary");
+      healthSummary.textContent = "Feed health";
+      const healthList = document.createElement("ul");
+      for (const [name, health] of Object.entries(data.health)) {
+        const row = document.createElement("li");
+        row.textContent = name + ": " + health.status + " — " +
+          health.filteredEntries + "/" + health.totalEntries + " items" +
+          (health.message ? " (" + health.message + ")" : "");
+        healthList.append(row);
+      }
+      healthDetails.append(healthSummary, healthList);
+      preview.append(healthDetails);
+      const groups = data.items.reduce((result, item) => {
+        (result[item.source] ||= []).push(item);
+        return result;
+      }, {});
+      for (const [source, items] of Object.entries(groups)) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = source + " (" + items.length + ")";
+        const list = document.createElement("ul");
+        for (const item of items) {
+          const row = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = item.link;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.textContent = item.title;
+          row.append(link);
+          list.append(row);
+        }
+        details.append(summary, list);
+        preview.append(details);
+      }
+      generateButton.disabled = data.itemCount === 0;
+    } catch (error) {
+      fetchStatus.textContent = error.message;
+    } finally {
+      fetchButton.disabled = false;
+    }
+  });
+
+  generateButton.addEventListener("click", async () => {
+    generateButton.disabled = true;
+    output.textContent = "";
+    generateStatus.textContent = "Starting…";
+    try {
+      const response = await fetch("/api/generate", { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Generation failed");
+      }
+      await readEvents(response, (event, data) => {
+        if (event === "stage") generateStatus.textContent = data.message;
+        if (event === "content") output.textContent += data.content;
+        if (event === "complete") {
+          generateStatus.textContent = "Saved to " + data.file;
+        }
+        if (event === "error") throw new Error(data.message);
+      });
+    } catch (error) {
+      generateStatus.textContent = error.message;
+    } finally {
+      generateButton.disabled = false;
+    }
+  });
+
+  async function readEvents(response, callback) {
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      buffer = (buffer + result.value).replaceAll("\r\n", "\n");
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        let event = "message";
+        let data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          if (line.startsWith("data:")) data += line.slice(5).trimStart();
+        }
+        if (data) callback(event, JSON.parse(data));
+      }
+    }
+  }
+`;

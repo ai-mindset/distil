@@ -1,151 +1,144 @@
 # ⚗️ Distil
 
-Intelligent content distillation tool. Aggregates content from RSS feeds and YouTube transcripts, filters by relevance, and generates executive summaries using local or cloud LLMs with real-time streaming and batch processing. Perfect for research, industry analysis, or staying current in any domain.
+Distil collects recent RSS, Atom, and YouTube content, filters it for relevance, and
+produces a concise Markdown research digest with Ollama or any OpenAI-compatible
+chat-completions API, including Mistral and 9Router.
 
-## Quick Start
+The application is written in TypeScript for Deno. It has no third-party runtime packages:
+configuration, feed parsing, CLI handling, web serving, streaming, and tests all use
+repository code or stable Deno APIs.
 
-**Requirements:** Python 3.13+ (check with `python --version`)
+## Requirements
 
-**Step 1: Install uv (Python package manager)**
+- [Deno 2](https://docs.deno.com/runtime/)
+- [Ollama](https://ollama.com/download) for local models, or an API key for a compatible
+  hosted provider
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) only for YouTube sources
 
-**Windows:**
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
+## Quick start
 
-**macOS/Linux:**
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+With Ollama installed:
 
-> **Note:** Restart your terminal after installation to update your PATH.
+    deno task distil setup
+    deno task distil run
 
-**Step 2: Run distil (auto-installs Ollama and models)**
-```bash
-git clone https://github.com/ai-mindset/distil.git && cd distil
-uv run distil run
-```
+The setup command starts the local Ollama server when needed and pulls the model from
+`config.toml`. To use the local web UI instead:
 
-Distil automatically installs Ollama and downloads models as needed.
+    deno task distil serve
 
-## Prerequisites
+The UI listens on `http://127.0.0.1:5001`. It fetches sources, previews feed health and
+matching items, streams generation progress, and stores collision-safe history files under
+`history/`.
 
-- Python 3.13+ (check with `python --version`)
-- Internet connection for initial setup
-- *Everything else (uv, Ollama, models) is automatically installed*
+## LLM configuration
 
-## Installation
+All providers share one small OpenAI-compatible transport. Distil sends
+`POST /v1/chat/completions`, supports JSON and SSE responses, retries transient failures,
+and applies a request timeout.
 
-**From source (development):**
-```bash
-git clone https://github.com/ai-mindset/distil.git
-cd distil
-uv run distil run  # Automatically sets up everything on first run
-```
+### Ollama
 
-**From package (when published):**
-```bash
-uv tool install distil
-distil run  # Automatically sets up Ollama and models
-```
+The checked-in configuration uses Ollama:
 
-## Configuration
+    [llm]
+    provider = "ollama"
+    model = "qwen2.5:3b"
+    base_url = "http://127.0.0.1:11434/v1"
+    timeout_seconds = 900
+    retries = 2
 
-Copy `config.toml` to your working directory and edit:
+Legacy model values such as `ollama/qwen2.5:3b` remain supported.
 
-```toml
-[llm]
-model = "ollama/qwen2.5:3b"  # Local (free) — or "anthropic/claude-sonnet-4-20250514" (requires API key)
+### Mistral
 
-[output]
-directory = "~/distils"        # Where to save distils
-reading_time_minutes = 5       # Target reading time
+Mistral exposes the same chat-completions request shape. Set the key in the environment
+rather than in TOML:
 
-[domain]
-focus = "drug discovery, pharmacology, AI/ML for therapeutics"  # Customize for your domain
+    export MISTRAL_API_KEY="..."
 
-[[feeds]]
-url = "https://rss.arxiv.org/rss/cs.ai"
-name = "arXiv AI"
-keywords = ["drug", "molecule", "protein", "binding"]  # Only items matching these
-max_items = 5
-# pattern = "(?i)(biotech|drug|pharma)"  # Optional: regex pattern for advanced filtering
-```
+Then configure:
 
-For cloud LLMs, set your API key:
+    [llm]
+    provider = "openai"
+    model = "mistral-small-latest"
+    base_url = "https://api.mistral.ai/v1"
+    api_key_env = "MISTRAL_API_KEY"
+    timeout_seconds = 120
+    retries = 2
 
-**macOS/Linux:**
-```bash
-export ANTHROPIC_API_KEY="sk-..."
-```
+### Other OpenAI-compatible services
 
-**Windows (PowerShell):**
-```powershell
-$env:ANTHROPIC_API_KEY="sk-..."
-```
+Set `provider = "openai"`, choose the service's model and base URL, and name the
+environment variable that holds its key:
 
-**Windows (Command Prompt):**
-```cmd
-set ANTHROPIC_API_KEY=sk-...
-```
+    [llm]
+    provider = "openai"
+    model = "your-model"
+    base_url = "https://provider.example/v1"
+    api_key_env = "PROVIDER_API_KEY"
 
-## Usage
+For a local endpoint with no authentication, set `api_key_env = ""`.
 
-**Web UI (recommended):**
-```bash
-uv run distil serve  # Auto-installs dependencies if needed
-```
-Opens browser at `http://localhost:5001`. Click "Fetch Items" to preview, then "Generate Distil".
+[9Router](https://github.com/decolua/9router) is useful when routing or provider failover
+is needed:
 
-**CLI:**
-```bash
-uv run distil run              # Generate distil with defaults (auto-installs Ollama if needed)
-uv run distil run --days 3     # Last 3 days only
-```
+    base_url = "http://127.0.0.1:20128/v1"
+    api_key_env = "NINEROUTER_KEY"
 
-## Output
+[Headroom](https://github.com/headroomlabs-ai/headroom) can be placed in front of a
+compatible provider when prompt compression is worth the extra local service. Point
+`base_url` at its OpenAI-compatible proxy. Distil does not require either service and does
+not embed OpenHands or Diffy in its runtime.
 
-Distils are saved to `history/distil-YYYY-MM-DD_HHMM.md` in your current directory. View past distils at `http://localhost:5001/history`.
+## Sources and filtering
 
-## Adding Sources
+Each `[[feeds]]` entry accepts:
 
-Edit `config.toml` to add feeds:
+| Field       | Meaning                                                                  |
+| ----------- | ------------------------------------------------------------------------ |
+| `url`       | Required HTTP(S) RSS, Atom, YouTube video, channel, or playlist URL      |
+| `name`      | Display name; defaults to the URL hostname                               |
+| `type`      | Optional `rss` or `youtube`; YouTube URLs are detected automatically     |
+| `max_items` | Maximum matching items or transcripts                                    |
+| `keywords`  | Include an item when any keyword occurs in its title or summary          |
+| `pattern`   | Additional case-insensitive JavaScript regex; leading `(?i)` is accepted |
 
-```toml
-[[feeds]]
-url = "https://example.com/rss"
-name = "My Feed"
-keywords = ["relevant", "terms"]      # Optional: filter by keywords
-max_items = 25                        # Optional: limit items
-# pattern = "(?i)(regex|pattern)"     # Optional: regex for advanced filtering
+YouTube captions are downloaded into the ignored `transcripts/` directory. Source text is
+treated as untrusted data in prompts.
 
-# YouTube playlists/channels also supported
-[[feeds]]
-url = "https://youtube.com/@channel"
-name = "YouTube Channel"
-max_items = 10
-```
+## Commands
 
-## Features
+    deno task distil run --days 3
+    deno task distil run --config custom.toml
+    deno task distil serve --host 127.0.0.1 --port 5001 --no-browser
+    deno task distil setup
+    deno task distil --help
 
-- **⚡ Zero-Config Setup**: Automatically installs Ollama and downloads models on first run
-- **🌍 Cross-Platform**: Works on Linux, macOS, and Windows
-- **📺 YouTube Support**: Extract transcripts from YouTube videos and playlists
-- **🌙 Dark Mode**: Comprehensive dark/light theme with localStorage persistence
-- **📊 Feed Health Monitoring**: Real-time status tracking with detailed health reports
-- **🔄 Batch Processing**: Intelligent batching prevents LLM context window limits
-- **📈 Real-time Streaming**: Server-Sent Events (SSE) for live progress updates
-- **🚀 Smart Port Management**: Automatic port conflict detection and resolution
-- **📁 History Management**: View and manage past distils with web interface
-- **🎯 Advanced Filtering**: Keyword and regex pattern matching for precise content selection
+CLI digests use `[output].directory`; web history uses `history/`. Both use timestamped,
+collision-safe filenames and never silently replace an existing digest.
 
-## Troubleshooting
+To install a global source command:
 
-| Issue | Solution |
-|-------|----------|
-| "Connection refused" from Ollama | Distil will automatically start Ollama server; if issues persist, check system logs |
-| Slow generation | Reduce `max_items` per feed, or use fewer feeds |
-| Missing items | Check `keywords` aren't too restrictive |
-| Web app stuck at "Fetching..." | Check feed URLs are accessible; see feed health report |
-| Timeout errors | System now uses batch processing to prevent this |
-| Windows Ollama setup | Manual download required from https://ollama.com/download (auto-install not supported) |
+    deno install --global --name distil --allow-read --allow-write --allow-net --allow-env --allow-run src/main.ts
+
+To build a bundled, minified, self-contained QuickJS executable for the current operating
+system and architecture:
+
+    deno task compile
+
+The output is `distil-bin`. Native executables are target-specific, so a cross-platform
+release consists of one single-file build per supported Deno `--target`, rather than one
+binary that runs on every operating system. Deno currently labels QuickJS and bundled
+compilation experimental; smoke-test each release artifact on its target platform.
+
+## Development
+
+    deno task check
+
+The check task formats, lints, type-checks, and runs the full deterministic test suite.
+Tests mock network, LLM, and Ollama boundaries; they do not spend API credits or download
+models.
+
+The web server binds to loopback by default and has no authentication. Do not expose it
+publicly without adding an authentication and authorization design.

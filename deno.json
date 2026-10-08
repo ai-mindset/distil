@@ -1,0 +1,22 @@
+{
+  "name": "@distil/cli",
+  "version": "0.2.0",
+  "exports": "./src/main.ts",
+  "tasks": {
+    "distil": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run src/main.ts",
+    "check": "deno fmt --check && deno lint && deno check src/main.ts && deno test -A",
+    "test": "deno test -A",
+    "compile": "deno compile --engine quickjs --bundle --minify --allow-read --allow-write --allow-net --allow-env --allow-run --output distil-bin src/main.ts"
+  },
+  "fmt": {
+    "lineWidth": 90,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  }
+}
