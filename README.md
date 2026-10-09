@@ -177,7 +177,8 @@ treated as untrusted data in prompts.
     deno task distil --help
 
 CLI digests use `[output].directory`; web history uses `history/`. Both use timestamped,
-collision-safe filenames and never silently replace an existing digest.
+collision-safe filenames and never silently replace an existing digest. Prompt batches are
+bounded by source-text size rather than a fixed number of items.
 
 To install a global source command:
 
