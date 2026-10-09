@@ -335,6 +335,9 @@ Deno.test("home page includes security headers and accessible controls", async (
   assertMatch(content, /aria-live="polite"/);
   assertMatch(content, /data-theme="dark"/);
   assertMatch(content, /data-palette="fasthtml-blue"/);
+  assertMatch(content, /<img class="brand-logo"/);
+  assertMatch(content, /<link rel="icon"[^>]+distil-logo\.png/);
+  assertMatch(content, /\.brand-heading h1 \{ font-family:Inter/);
   assertMatch(content, /--blue-600:#2563eb/);
   assertMatch(content, /--blue-500:#3b82f6/);
   assertMatch(content, /--blue-400:#60a5fa/);
@@ -360,6 +363,13 @@ Deno.test("home page includes security headers and accessible controls", async (
   const script = content.match(/<script>([\s\S]+)<\/script>/)?.[1];
   if (!script) throw new Error("home page script was missing");
   new Function(script);
+
+  const logo = await app.handler(
+    new Request("http://localhost/assets/distil-logo.png"),
+  );
+  assertEquals(logo.status, 200);
+  assertEquals(logo.headers.get("content-type"), "image/png");
+  assertEquals((await logo.arrayBuffer()).byteLength > 1_000, true);
 });
 
 interface CompletedFetchState {

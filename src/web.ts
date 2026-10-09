@@ -19,6 +19,10 @@ import type {
 } from "./types.ts";
 import { historyPage, homePage, notFoundPage, viewPage } from "./web_ui.ts";
 
+const DISTIL_LOGO = Deno.readFileSync(
+  new URL("../assets/distil-logo.png", import.meta.url),
+);
+
 export interface WebDependencies {
   config: Config;
   client: ChatClient;
@@ -122,6 +126,14 @@ export class DistilWebApp {
       }
       if (request.method === "GET" && url.pathname === "/") {
         return html(homePage());
+      }
+      if (request.method === "GET" && url.pathname === "/assets/distil-logo.png") {
+        return new Response(DISTIL_LOGO, {
+          headers: responseHeaders({
+            "cache-control": "public, max-age=3600",
+            "content-type": "image/png",
+          }),
+        });
       }
       if (request.method === "GET" && url.pathname === "/health") {
         return json({

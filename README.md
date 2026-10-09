@@ -1,4 +1,8 @@
-# ⚗️ Distil
+<p align="center">
+  <img src="assets/distil-logo.png" alt="Distil logo" width="160">
+</p>
+
+<h1 align="center">Distil</h1>
 
 Distil collects recent RSS, Atom, and YouTube content, filters it for relevance, and
 produces a concise Markdown research digest with Ollama or any OpenAI-compatible

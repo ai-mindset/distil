@@ -4,7 +4,7 @@ export function homePage(): string {
     [
       '<button id="theme" class="theme" aria-label="Toggle theme">◐</button>',
       "<main>",
-      "<h1>Distil</h1>",
+      brandHeading(),
       '<p class="lede">Turn the sources you trust into a focused research digest.</p>',
       '<section class="card">',
       "<h2>Collect</h2>",
@@ -49,6 +49,7 @@ export function historyPage(files: string[]): string {
     "History · Distil",
     [
       "<main>",
+      brandLink(),
       "<h1>History</h1>",
       list,
       '<a href="/">← Back</a>',
@@ -62,6 +63,7 @@ export function viewPage(filename: string, content: string): string {
     `${filename} · Distil`,
     [
       "<main>",
+      brandLink(),
       `<h1>${escapeHtml(filename)}</h1>`,
       `<pre tabindex="0">${escapeHtml(content)}</pre>`,
       '<a href="/history">← Back to history</a>',
@@ -75,6 +77,7 @@ export function notFoundPage(): string {
     "Not found · Distil",
     [
       "<main>",
+      brandLink(),
       "<h1>Not found</h1>",
       "<p>The requested page does not exist.</p>",
       '<a href="/">← Back</a>',
@@ -90,12 +93,33 @@ function page(title: string, body: string, script = ""): string {
     "<head>",
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="theme-color" content="#2563eb">',
+    '<link rel="icon" type="image/png" href="/assets/distil-logo.png">',
+    '<link rel="apple-touch-icon" href="/assets/distil-logo.png">',
     `<title>${escapeHtml(title)}</title>`,
     `<style>${CSS}</style>`,
     "</head>",
     `<body>${body}${script ? `<script>${script}</script>` : ""}</body>`,
     "</html>",
   ].join("\n");
+}
+
+function brandHeading(): string {
+  return [
+    '<div class="brand brand-heading">',
+    '<img class="brand-logo" src="/assets/distil-logo.png" alt="" width="96" height="96">',
+    "<h1>Distil</h1>",
+    "</div>",
+  ].join("");
+}
+
+function brandLink(): string {
+  return [
+    '<a class="brand site-brand" href="/" aria-label="Distil home">',
+    '<img class="brand-logo" src="/assets/distil-logo.png" alt="" width="40" height="40">',
+    "<span>Distil</span>",
+    "</a>",
+  ].join("");
 }
 
 function escapeHtml(value: string): string {
@@ -125,6 +149,14 @@ const CSS = String.raw`
   body { margin:0; background:var(--bg); color:var(--ink);
     font:16px/1.55 ui-sans-serif,system-ui,sans-serif; }
   main { width:min(780px,calc(100% - 2rem)); margin:4rem auto; }
+  .brand { display:flex; align-items:center; gap:.85rem; width:max-content;
+    color:var(--ink); text-decoration:none; }
+  .brand-logo { display:block; width:clamp(4.25rem,12vw,6rem); height:auto; }
+  .site-brand { margin-bottom:1.5rem; font-weight:800; font-size:1.15rem; }
+  .site-brand .brand-logo { width:2.5rem; }
+  .brand-heading h1 { font-family:Inter,"Avenir Next","Segoe UI Variable Display",
+    "Segoe UI",Roboto,"Helvetica Neue",Arial,ui-sans-serif,system-ui,sans-serif;
+    font-weight:750; font-optical-sizing:auto; letter-spacing:-.06em; }
   h1 { margin:0; font:700 clamp(2.6rem,8vw,5rem)/.95 ui-serif,Georgia,serif;
     letter-spacing:-.045em; } h2 { margin-top:0; font-size:1.05rem; }
   .lede { color:var(--muted); font-size:1.1rem; margin:1rem 0 2rem; }
