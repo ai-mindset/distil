@@ -2,10 +2,17 @@ import { helpText, parseCliArgs, VERSION } from "../src/cli.ts";
 import { assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
 Deno.test("parses run and serve CLI options", () => {
-  const run = parseCliArgs(["run", "--config=custom.toml", "--days", "14"]);
+  const run = parseCliArgs([
+    "run",
+    "--config=custom.toml",
+    "--days",
+    "14",
+    "--review-policy=exclude",
+  ]);
   assertEquals(run.command, "run");
   assertEquals(run.config, "custom.toml");
   assertEquals(run.days, 14);
+  assertEquals(run.reviewPolicy, "exclude");
 
   const preview = parseCliArgs(["preview", "--include-seen"]);
   assertEquals(preview.command, "preview");
@@ -30,6 +37,14 @@ Deno.test("rejects unknown and invalid CLI options", async () => {
     () => parseCliArgs(["serve", "--port", "nope"]),
     /requires an integer/,
   );
+  await assertRejects(
+    () => parseCliArgs(["run", "--review-policy", "maybe"]),
+    /must be include or exclude/,
+  );
+  await assertRejects(
+    () => parseCliArgs(["preview", "--review-policy", "include"]),
+    /only valid with the run command/,
+  );
 });
 
 Deno.test("documents all supported commands", () => {
@@ -38,6 +53,7 @@ Deno.test("documents all supported commands", () => {
   assertMatch(help, /distil preview/);
   assertMatch(help, /distil serve/);
   assertMatch(help, /distil setup/);
+  assertMatch(help, /--review-policy/);
 });
 
 Deno.test("keeps the CLI and package versions in sync", async () => {

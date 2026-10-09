@@ -9,7 +9,13 @@ export const DEFAULT_SEEN_STATE_PATH = ".distil/state.json";
 const STATE_VERSION = 1;
 const MAX_SEEN_ITEMS = 20_000;
 
-export type SelectionKind = "selected" | "excluded" | "review" | "seen" | "fallback";
+export type SelectionKind =
+  | "selected"
+  | "excluded"
+  | "review"
+  | "seen"
+  | "fallback"
+  | "manual";
 
 export interface ItemSelection {
   item: ContentItem;
@@ -25,6 +31,8 @@ export interface SelectionResult {
   selected: ContentItem[];
   warning?: string;
 }
+
+export type ReviewPolicy = "include" | "exclude";
 
 export interface SeenStore {
   load(): Promise<Set<string>>;
@@ -134,7 +142,7 @@ export class ContentSelector implements SelectionPipeline {
       await this.#decisionClient.health(options.signal);
     } catch (error) {
       if (options.signal?.aborted) throw options.signal.reason;
-      warning = `Strands unavailable; included new items by safe fallback: ${
+      warning = `Strands unavailable; affected items were left for review: ${
         message(error)
       }`;
       selections.push(...fallbackSelections(candidates, warning));
@@ -167,7 +175,7 @@ export class ContentSelector implements SelectionPipeline {
         });
       } catch (error) {
         if (options.signal?.aborted) throw options.signal.reason;
-        warning = `Strands failed; included undecided items by safe fallback: ${
+        warning = `Strands failed; affected items were left for review: ${
           message(error)
         }`;
         selections.push(...fallbackSelections(candidates.slice(index), warning));
@@ -184,11 +192,51 @@ export class ContentSelector implements SelectionPipeline {
   }
 
   async markReviewed(result: SelectionResult, now = new Date()): Promise<void> {
+    const unresolved = unresolvedSelections(result);
+    if (unresolved.length > 0) {
+      throw new Error(`Cannot mark ${unresolved.length} unresolved item(s) as reviewed`);
+    }
     const reviewed = result.items
       .filter((selection) => selection.kind !== "seen")
       .map((selection) => selection.fingerprint);
     if (reviewed.length > 0) await this.#seenStore.add(reviewed, now);
   }
+}
+
+export function unresolvedSelections(result: SelectionResult): ItemSelection[] {
+  return result.items.filter(isPendingSelection);
+}
+
+export function resolvePendingSelection(
+  result: SelectionResult,
+  fingerprint: string,
+  policy: ReviewPolicy,
+): SelectionResult {
+  const target = result.items.find((selection) => selection.fingerprint === fingerprint);
+  if (!target) throw new Error("Unknown selection fingerprint");
+  if (!isPendingSelection(target)) throw new Error("Selection does not require review");
+  return resolvedResult(
+    result,
+    result.items.map((selection) =>
+      selection === target
+        ? manualResolution(selection, policy, "user review")
+        : selection
+    ),
+  );
+}
+
+export function resolveAllPending(
+  result: SelectionResult,
+  policy: ReviewPolicy,
+): SelectionResult {
+  return resolvedResult(
+    result,
+    result.items.map((selection) =>
+      isPendingSelection(selection)
+        ? manualResolution(selection, policy, "explicit bulk review")
+        : selection
+    ),
+  );
 }
 
 export class FileSeenStore implements SeenStore {
@@ -286,10 +334,10 @@ function selectionFromVerdict(
     );
     return {
       ...candidate,
-      selected: true,
+      selected: false,
       kind: "review",
       reason:
-        `Strands leaned ${verdict.choice} with ${confidence} confidence in its relevance classification; included conservatively and marked Review because this is below the ${threshold} decision threshold`,
+        `Strands could not classify relevance reliably; its top choice was ${verdict.choice}, with ${confidence} classification confidence, below the ${threshold} decision threshold`,
       confidence: verdict.confidence,
     };
   }
@@ -311,10 +359,41 @@ function fallbackSelections(
 ): ItemSelection[] {
   return candidates.map((candidate) => ({
     ...candidate,
-    selected: true,
+    selected: false,
     kind: "fallback",
     reason,
   }));
+}
+
+function isPendingSelection(selection: ItemSelection): boolean {
+  return selection.kind === "review" || selection.kind === "fallback";
+}
+
+function manualResolution(
+  selection: ItemSelection,
+  policy: ReviewPolicy,
+  source: "user review" | "explicit bulk review",
+): ItemSelection {
+  const included = policy === "include";
+  return {
+    ...selection,
+    selected: included,
+    kind: "manual",
+    reason: `${included ? "Included" : "Excluded"} by ${source}. ${selection.reason}`,
+  };
+}
+
+function resolvedResult(
+  result: SelectionResult,
+  items: ItemSelection[],
+): SelectionResult {
+  return {
+    ...result,
+    items,
+    selected: items.filter((selection) => selection.selected).map((selection) =>
+      selection.item
+    ),
+  };
 }
 
 function resultInInputOrder(

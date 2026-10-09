@@ -16,6 +16,11 @@ export function homePage(): string {
       '<p id="fetch-status" class="status" aria-live="polite"></p>',
       '<progress id="fetch-progress" hidden></progress>',
       '<ol id="fetch-log" class="progress-log" aria-live="polite"></ol>',
+      '<div id="review-actions" class="review-actions row" hidden>',
+      '<strong id="review-summary"></strong>',
+      '<button id="include-unresolved" type="button" class="secondary" data-review-action>Include all</button>',
+      '<button id="exclude-unresolved" type="button" class="secondary" data-review-action>Exclude all</button>',
+      "</div>",
       '<div id="preview"></div>',
       "</section>",
       '<section class="card">',
@@ -115,7 +120,8 @@ const CSS = String.raw`
     --accent:var(--blue-600); --accent-hover:var(--blue-600); --accent-ink:#fff;
     --link:var(--blue-400); --focus:#fbbf24; --focus-ring:#f9fafb;
     --pre-bg:#0f172a; --pre-ink:#e2e8f0; --shadow:#0000004d; }
-  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink);
+  * { box-sizing:border-box; } [hidden] { display:none!important; }
+  body { margin:0; background:var(--bg); color:var(--ink);
     font:16px/1.55 ui-sans-serif,system-ui,sans-serif; }
   main { width:min(780px,calc(100% - 2rem)); margin:4rem auto; }
   h1 { margin:0; font:700 clamp(2.6rem,8vw,5rem)/.95 ui-serif,Georgia,serif;
@@ -143,12 +149,23 @@ const CSS = String.raw`
   progress { width:100%; height:.65rem; accent-color:var(--accent); }
   .progress-log { max-height:10rem; overflow:auto; margin:.65rem 0 1rem;
     padding-left:1.5rem; color:var(--muted); font-size:.9rem; }
+  .review-actions { padding:.75rem; margin:.75rem 0; border:1px solid var(--line);
+    border-radius:9px; background:var(--pre-bg); }
   details { border-top:1px solid var(--line); padding:.6rem 0; }
   summary { cursor:pointer; font-weight:700; } ul { padding-left:1.3rem; }
   .decision { margin:.55rem 0; } .decision small { display:block; color:var(--muted); }
-  .tag { display:inline-block; min-width:3rem; margin-right:.45rem; color:var(--muted);
-    font-size:.75rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
-  .keep .tag,.review .tag { color:var(--link); }
+  .decision-actions { display:flex; gap:.5rem; margin:.4rem 0 0 3.45rem; }
+  .decision-actions button { padding:.35rem .65rem; font-size:.85rem; }
+  .tag { display:inline-flex; align-items:center; justify-content:center; gap:.3rem;
+    min-width:6.5rem; margin-right:.45rem; padding:.12rem .5rem; border:1px solid var(--line);
+    border-radius:999px; color:var(--muted); font-size:.75rem; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; }
+  .keep .tag { color:var(--accent-ink); background:var(--accent);
+    border-color:var(--accent); }
+  .review .tag,.fallback .tag { color:var(--link); border-color:var(--link);
+    border-style:dashed; }
+  .skip .tag { color:var(--muted); border-color:var(--muted); }
+  .tag-icon { font-size:1rem; line-height:1; }
   pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--pre-bg);
     color:var(--pre-ink); border:1px solid var(--line); padding:1rem; border-radius:10px;
     max-height:34rem; overflow:auto; }
@@ -172,15 +189,19 @@ const HOME_SCRIPT = String.raw`
   const fetchStatus = document.querySelector("#fetch-status");
   const fetchProgress = document.querySelector("#fetch-progress");
   const fetchLog = document.querySelector("#fetch-log");
+  const reviewActions = document.querySelector("#review-actions");
+  const reviewSummary = document.querySelector("#review-summary");
+  const includeUnresolvedButton = document.querySelector("#include-unresolved");
+  const excludeUnresolvedButton = document.querySelector("#exclude-unresolved");
   const generateStatus = document.querySelector("#generate-status");
   const preview = document.querySelector("#preview");
   const output = document.querySelector("#output");
   const dispositions = {
-    selected: { label: "Keep", className: "keep" },
-    excluded: { label: "Skip", className: "skip" },
-    review: { label: "Review", className: "review" },
+    selected: { label: "Include", icon: "✓", className: "keep" },
+    excluded: { label: "Exclude", icon: "–", className: "skip" },
+    review: { label: "Review", icon: "?", className: "review" },
     seen: { label: "Seen", className: "seen" },
-    fallback: { label: "Fallback", className: "fallback" },
+    fallback: { label: "Fallback", icon: "!", className: "fallback" },
   };
   let pollTimer;
 
@@ -242,6 +263,7 @@ const HOME_SCRIPT = String.raw`
       fetchButton.disabled = true;
       cancelFetchButton.disabled = false;
       generateButton.disabled = true;
+      reviewActions.hidden = true;
       fetchStatus.textContent = data.progress?.message || "Fetching sources…";
       schedulePoll();
       return;
@@ -250,14 +272,22 @@ const HOME_SCRIPT = String.raw`
     cancelFetchButton.disabled = data.status === "idle";
     if (data.status === "complete" && data.result) {
       const result = data.result;
-      fetchStatus.textContent = "Fetched " + result.fetchedCount + " items; selected " +
-        result.selectedCount + " and skipped " + result.skippedCount + "." +
+      fetchStatus.textContent = "Fetched " + result.fetchedCount + " items; included " +
+        result.selectedCount + ", skipped " + result.skippedCount + ", and " +
+        result.unresolvedCount + " require review." +
         (result.warning ? " " + result.warning : "");
       renderFetchResult(result);
-      generateButton.disabled = result.itemCount === 0;
+      setReviewControlsDisabled(false);
+      reviewActions.hidden = result.unresolvedCount === 0;
+      reviewSummary.textContent = result.unresolvedCount + " item(s) require review.";
+      generateButton.disabled = result.itemCount === 0 || result.unresolvedCount > 0;
+      generateStatus.textContent = result.unresolvedCount > 0
+        ? "Resolve every review item before generating."
+        : "";
       return;
     }
     generateButton.disabled = true;
+    reviewActions.hidden = true;
     if (data.status === "error") {
       fetchStatus.textContent = data.error || "Fetch failed";
     } else {
@@ -287,6 +317,11 @@ const HOME_SCRIPT = String.raw`
   }
 
   function renderFetchResult(data) {
+    const openSources = new Set(
+      Array.from(preview.querySelectorAll("details[data-source][open]"), (details) =>
+        details.dataset.source
+      ),
+    );
     preview.replaceChildren();
     const healthDetails = document.createElement("details");
     const healthSummary = document.createElement("summary");
@@ -307,20 +342,38 @@ const HOME_SCRIPT = String.raw`
     }, {});
     for (const [source, items] of Object.entries(groups)) {
       const details = document.createElement("details");
+      details.dataset.source = source;
+      details.open = openSources.has(source);
       const summary = document.createElement("summary");
       const selected = items.filter((item) => item.selected).length;
-      summary.textContent = source + " (" + selected + "/" + items.length + " selected)";
+      const unresolved = items.filter((item) =>
+        item.kind === "review" || item.kind === "fallback"
+      ).length;
+      const skipped = items.length - selected - unresolved;
+      summary.textContent = source + " (" + selected + " included, " + skipped +
+        " skipped, " + unresolved + " review)";
       const list = document.createElement("ul");
       for (const item of items) {
-        const disposition = dispositions[item.kind] ||
+        const disposition = item.kind === "manual"
+          ? (item.selected
+            ? { label: "Included", icon: "✓", className: "keep" }
+            : { label: "Excluded", icon: "–", className: "skip" })
+          : dispositions[item.kind] ||
           (item.selected
-            ? { label: "Keep", className: "keep" }
-            : { label: "Skip", className: "skip" });
+            ? { label: "Include", icon: "✓", className: "keep" }
+            : { label: "Exclude", icon: "–", className: "skip" });
         const row = document.createElement("li");
         row.className = "decision " + disposition.className;
         const tag = document.createElement("span");
         tag.className = "tag";
-        tag.textContent = disposition.label;
+        if (disposition.icon) {
+          const icon = document.createElement("span");
+          icon.className = "tag-icon";
+          icon.ariaHidden = "true";
+          icon.textContent = disposition.icon;
+          tag.append(icon);
+        }
+        tag.append(disposition.label);
         const link = document.createElement("a");
         link.href = item.link;
         link.target = "_blank";
@@ -329,10 +382,63 @@ const HOME_SCRIPT = String.raw`
         const reason = document.createElement("small");
         reason.textContent = item.reason;
         row.append(tag, link, reason);
+        if (item.kind === "review" || item.kind === "fallback") {
+          const actions = document.createElement("div");
+          actions.className = "decision-actions";
+          actions.append(
+            reviewButton("Include", item.fingerprint, true),
+            reviewButton("Exclude", item.fingerprint, false),
+          );
+          row.append(actions);
+        }
         list.append(row);
       }
       details.append(summary, list);
       preview.append(details);
+    }
+  }
+
+  function reviewButton(label, fingerprint, selected) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.dataset.reviewAction = "";
+    button.className = "secondary";
+    button.addEventListener("click", () => {
+      void resolveReview({ fingerprint, selected });
+    });
+    return button;
+  }
+
+  includeUnresolvedButton.addEventListener("click", () => {
+    void resolveReview({ all: true, selected: true });
+  });
+
+  excludeUnresolvedButton.addEventListener("click", () => {
+    void resolveReview({ all: true, selected: false });
+  });
+
+  async function resolveReview(resolution) {
+    setReviewControlsDisabled(true);
+    generateStatus.textContent = "Saving review decision…";
+    try {
+      const response = await fetch("/api/fetch/selection", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(resolution),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save review decision");
+      renderFetchState(data);
+    } catch (error) {
+      generateStatus.textContent = error.message;
+      setReviewControlsDisabled(false);
+    }
+  }
+
+  function setReviewControlsDisabled(disabled) {
+    for (const button of document.querySelectorAll("[data-review-action]")) {
+      button.disabled = disabled;
     }
   }
 

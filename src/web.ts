@@ -2,9 +2,12 @@ import { collectContent } from "./content.ts";
 import { streamDistil } from "./prompts.ts";
 import {
   ContentSelector,
+  resolveAllPending,
+  resolvePendingSelection,
   type SelectionKind,
   type SelectionPipeline,
   type SelectionResult,
+  unresolvedSelections,
 } from "./selection.ts";
 import { listDigests, readDigest, saveDigest } from "./storage.ts";
 import type {
@@ -39,8 +42,10 @@ interface FetchPayload {
   fetchedCount: number;
   selectedCount: number;
   skippedCount: number;
+  unresolvedCount: number;
   warning?: string;
   items: Array<{
+    fingerprint: string;
     title: string;
     link: string;
     source: string;
@@ -61,9 +66,14 @@ interface FetchJob {
   progress: ProgressUpdate;
   events: Array<ProgressUpdate & { at: string }>;
   controller: AbortController;
+  collection?: CollectionResult;
   result?: FetchPayload;
   error?: string;
 }
+
+type SelectionResolution =
+  | { selected: boolean; all: true }
+  | { selected: boolean; all: false; fingerprint: string };
 
 export class DistilWebApp {
   readonly #config: Config;
@@ -103,7 +113,8 @@ export class DistilWebApp {
     const url = new URL(request.url);
     try {
       if (
-        (request.method === "POST" || request.method === "DELETE") &&
+        (request.method === "POST" || request.method === "PATCH" ||
+          request.method === "DELETE") &&
         request.headers.has("origin") &&
         request.headers.get("origin") !== url.origin
       ) {
@@ -124,6 +135,9 @@ export class DistilWebApp {
       }
       if (request.method === "GET" && url.pathname === "/api/fetch/status") {
         return json(this.#fetchSnapshot());
+      }
+      if (request.method === "PATCH" && url.pathname === "/api/fetch/selection") {
+        return await this.#handleSelectionResolution(request);
       }
       if (request.method === "DELETE" && url.pathname === "/api/fetch") {
         return this.#resetFetch();
@@ -201,6 +215,7 @@ export class DistilWebApp {
       });
       job.controller.signal.throwIfAborted();
       if (this.#fetchJob !== job) return;
+      job.collection = result;
       this.#cachedSelection = selection;
       this.#cachedItems = selection.selected;
       job.result = fetchPayload(result, selection);
@@ -210,7 +225,7 @@ export class DistilWebApp {
         completed: selection.items.length,
         total: selection.items.length,
         message:
-          `Fetch complete: selected ${selection.selected.length}/${selection.items.length} item(s)`,
+          `Fetch complete: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
       });
     } catch (error) {
       if (this.#fetchJob !== job) return;
@@ -259,16 +274,70 @@ export class DistilWebApp {
     return json(this.#fetchSnapshot());
   }
 
+  async #handleSelectionResolution(request: Request): Promise<Response> {
+    const job = this.#fetchJob;
+    if (
+      job?.status !== "complete" || !job.collection || !this.#cachedSelection
+    ) {
+      return json({ error: "No completed fetch is available for review" }, 409);
+    }
+
+    let resolution: SelectionResolution;
+    try {
+      resolution = await requestSelectionResolution(request);
+    } catch (error) {
+      return json({ error: message(error) }, 400);
+    }
+
+    try {
+      const policy = resolution.selected ? "include" : "exclude";
+      const selection = resolution.all
+        ? resolveAllPending(this.#cachedSelection, policy)
+        : resolvePendingSelection(
+          this.#cachedSelection,
+          resolution.fingerprint,
+          policy,
+        );
+      this.#cachedSelection = selection;
+      this.#cachedItems = selection.selected;
+      job.result = fetchPayload(job.collection, selection);
+      this.#recordFetchProgress(job, {
+        stage: "selecting",
+        completed: selection.items.length,
+        total: selection.items.length,
+        message:
+          `Review updated: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
+      });
+      return json(this.#fetchSnapshot());
+    } catch (error) {
+      return json({ error: message(error) }, 409);
+    }
+  }
+
   #handleGenerate(request: Request): Response {
+    const selection = this.#cachedSelection;
+    if (this.#fetchJob?.status !== "complete" || !selection) {
+      return json(
+        { error: "No completed fetch is available. Fetch content first." },
+        409,
+      );
+    }
+    const unresolved = unresolvedSelections(selection).length;
+    if (unresolved > 0) {
+      return json({
+        error: `Resolve ${unresolved} item(s) requiring review before generation.`,
+      }, 409);
+    }
     if (this.#cachedItems.length === 0) {
-      return json({ error: "No items fetched. Fetch content first." }, 409);
+      return json({
+        error: "No items are included. Include at least one item before generation.",
+      }, 409);
     }
     if (this.#generationInProgress) {
       return json({ error: "A generation is already running" }, 409);
     }
 
     const items = this.#cachedItems.slice();
-    const selection = this.#cachedSelection!;
     const encoder = new TextEncoder();
     const abortController = new AbortController();
     const signal = AbortSignal.any([request.signal, abortController.signal]);
@@ -401,6 +470,35 @@ async function requestFetchOptions(
   return { days: 7, includeSeen: false };
 }
 
+async function requestSelectionResolution(
+  request: Request,
+): Promise<SelectionResolution> {
+  let value: unknown;
+  try {
+    value = await request.json();
+  } catch {
+    throw new Error("Request body must contain valid JSON");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Request body must contain a JSON object");
+  }
+  const body = value as { selected?: unknown; all?: unknown; fingerprint?: unknown };
+  if (typeof body.selected !== "boolean") {
+    throw new Error("selected must be a boolean");
+  }
+  if (body.all !== undefined && typeof body.all !== "boolean") {
+    throw new Error("all must be a boolean");
+  }
+  if (body.all === true) return { selected: body.selected, all: true };
+  const fingerprint = body.fingerprint;
+  if (
+    typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)
+  ) {
+    throw new Error("fingerprint must be a lowercase SHA-256 value");
+  }
+  return { selected: body.selected, all: false, fingerprint };
+}
+
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -413,9 +511,14 @@ function fetchPayload(
     itemCount: selection.selected.length,
     fetchedCount: result.items.length,
     selectedCount: selection.selected.length,
-    skippedCount: result.items.length - selection.selected.length,
+    skippedCount:
+      selection.items.filter((entry) =>
+        !entry.selected && entry.kind !== "review" && entry.kind !== "fallback"
+      ).length,
+    unresolvedCount: unresolvedSelections(selection).length,
     warning: selection.warning,
     items: selection.items.map((entry) => ({
+      fingerprint: entry.fingerprint,
       title: entry.item.title,
       link: entry.item.link,
       source: entry.item.source,

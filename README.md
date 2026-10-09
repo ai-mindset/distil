@@ -32,8 +32,10 @@ only when `manage_local = true`. To use the local web UI instead:
 The UI listens on `http://127.0.0.1:5001`. Fetching runs as an in-process background job:
 the page reports source and Strands progress, and leaving for history then returning
 resumes the same view. **Stop and reset** cancels an in-flight fetch and clears its cached
-result. The UI previews feed health and explained item-selection decisions, streams
-generation progress, and stores collision-safe history files under `history/`.
+result. The UI previews feed health and explained item-selection decisions. Every
+low-confidence or failed decision must be explicitly included or excluded before the UI
+enables generation. It then streams generation progress and stores collision-safe history
+files under `history/`.
 
 ## LLM configuration
 
@@ -127,13 +129,15 @@ Then enable its loopback endpoint:
     confidence_threshold = 0.9
     timeout_seconds = 10
 
-Distil accepts an exclusion only when Strands meets the confidence threshold. The preview
-labels confident inclusions as **Keep**, confident exclusions as **Skip**, previously
-processed items as **Seen**, and low-confidence choices as **Review** while reporting
-whether Strands leaned include or exclude. A malformed response, timeout, or unavailable
-service is labelled **Fallback** and includes the item conservatively. Decision endpoints
-are restricted to loopback, so source material is never sent to a hosted fallback. Strands
-confidence measures its relevance classification; it does not establish the scientific
+Distil accepts a Strands include or exclude classification only when it meets the
+configured confidence threshold. The preview labels those results **Include** or
+**Exclude**, previously processed items **Seen**, and lower-confidence results **Review**.
+A malformed response, timeout, or unavailable service is labelled **Fallback**. Review and
+Fallback items remain unresolved and never enter a digest until the user explicitly
+includes or excludes them. There is no second, lower acceptance threshold: every result
+below `confidence_threshold` requires review. Decision endpoints are restricted to
+loopback, so source material is never sent to a hosted fallback. Strands confidence
+measures confidence in its relevance classification; it does not establish the scientific
 truth, quality, or reproducibility of a source's claims.
 
 Distil does not install or start Strands. When decision selection is enabled,
@@ -142,6 +146,13 @@ Distil does not install or start Strands. When decision selection is enabled,
 Preview selection without calling the generative LLM:
 
     deno task distil preview --days 7
+
+The web UI offers Include and Exclude controls beside every unresolved item, plus explicit
+bulk controls. CLI `run` stops when review is required; after inspecting `preview`, opt in
+to a deterministic bulk decision when appropriate:
+
+    deno task distil run --review-policy=include
+    deno task distil run --review-policy=exclude
 
 After a digest is saved, Distil records reviewed item fingerprints in
 `.distil/state.json`. Later runs skip them; use `--include-seen` or the web checkbox to
@@ -170,6 +181,7 @@ treated as untrusted data in prompts.
 
     deno task distil run --days 3
     deno task distil run --include-seen
+    deno task distil run --review-policy=exclude
     deno task distil preview --days 7
     deno task distil run --config custom.toml
     deno task distil serve --host 127.0.0.1 --port 5001 --no-browser

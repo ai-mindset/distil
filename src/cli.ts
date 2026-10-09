@@ -4,7 +4,13 @@ import { StrandsDecisionClient } from "./decision.ts";
 import { OpenAICompatibleClient } from "./llm.ts";
 import { ensureOllamaReady } from "./ollama.ts";
 import { generateDistil } from "./prompts.ts";
-import { ContentSelector, type SelectionResult } from "./selection.ts";
+import {
+  ContentSelector,
+  resolveAllPending,
+  type ReviewPolicy,
+  type SelectionResult,
+  unresolvedSelections,
+} from "./selection.ts";
 import { saveDigest } from "./storage.ts";
 import type { ProgressUpdate } from "./types.ts";
 import { DistilWebApp, startServer } from "./web.ts";
@@ -19,6 +25,7 @@ export interface CliOptions {
   port: number;
   browser: boolean;
   includeSeen: boolean;
+  reviewPolicy?: ReviewPolicy;
   help: boolean;
   version: boolean;
 }
@@ -74,6 +81,14 @@ export function parseCliArgs(args: string[]): CliOptions {
         }
         options.includeSeen = true;
         break;
+      case "--review-policy": {
+        const value = inlineValue ?? requiredValue(flag, remaining);
+        if (value !== "include" && value !== "exclude") {
+          throw new Error("--review-policy must be include or exclude");
+        }
+        options.reviewPolicy = value;
+        break;
+      }
       case "--help":
       case "-h":
         options.help = true;
@@ -94,6 +109,9 @@ export function parseCliArgs(args: string[]): CliOptions {
     throw new Error("--port must be an integer between 1 and 65535");
   }
   if (!options.hostname.trim()) throw new Error("--host must not be empty");
+  if (options.reviewPolicy && options.command !== "run") {
+    throw new Error("--review-policy is only valid with the run command");
+  }
   return options;
 }
 
@@ -139,13 +157,28 @@ export async function main(args = Deno.args): Promise<number> {
       }
       console.log(`Collected ${result.items.length} item(s).`);
       const selector = new ContentSelector(config.decision, config.domain.focus);
-      const selection = await selector.select(result.items, {
+      let selection = await selector.select(result.items, {
         includeSeen: options.includeSeen,
         onProgress: printProgress,
       });
-      printSelection(selection);
       if (selection.warning) console.error(`Warning: ${selection.warning}`);
+      const unresolved = unresolvedSelections(selection);
+      const reviewPolicy = options.reviewPolicy;
+      printSelection(selection);
       if (options.command === "preview") return 0;
+      if (unresolved.length > 0 && !reviewPolicy) {
+        throw new Error(
+          `${unresolved.length} item(s) require review. Use the web app for per-item review or rerun with --review-policy=include or --review-policy=exclude.`,
+        );
+      }
+      if (unresolved.length > 0 && reviewPolicy) {
+        selection = resolveAllPending(selection, reviewPolicy);
+        console.log(
+          `${
+            reviewPolicy === "include" ? "Included" : "Excluded"
+          } ${unresolved.length} unresolved item(s) by explicit CLI policy.`,
+        );
+      }
       if (selection.selected.length === 0) {
         throw new Error(
           "No new relevant items selected. Use --include-seen to reconsider seen items.",
@@ -200,7 +233,7 @@ export function helpText(): string {
   return `Distil ${VERSION} — focused research digests from RSS and YouTube
 
 Usage:
-  distil run [--config FILE] [--days N] [--include-seen]
+  distil run [--config FILE] [--days N] [--include-seen] [--review-policy POLICY]
   distil preview [--config FILE] [--days N] [--include-seen]
   distil serve [--config FILE] [--host HOST] [--port N] [--no-browser]
   distil setup [--config FILE]
@@ -215,6 +248,7 @@ Options:
   --config FILE   Configuration file (default: config.toml)
   --days N        Lookback window for run (default: 7)
   --include-seen  Reconsider items recorded by a completed run
+  --review-policy Resolve all uncertain items with include or exclude (run only)
   --host HOST     Web bind address (default: 127.0.0.1)
   --port N        Web port (default: 5001)
   --no-browser    Do not open the web UI automatically
@@ -223,9 +257,15 @@ Options:
 }
 
 function printSelection(result: SelectionResult): void {
+  const unresolved = unresolvedSelections(result);
   console.log(
-    `Selected ${result.selected.length}/${result.items.length} item(s) for generation.`,
+    `Selected ${result.selected.length}/${result.items.length} item(s) for generation; ${unresolved.length} require review.`,
   );
+  for (const selection of unresolved) {
+    console.log(
+      `REVIEW ${selection.item.title}\n  ${selection.reason}\n  ${selection.item.link}`,
+    );
+  }
 }
 
 function printProgress(update: ProgressUpdate): void {
