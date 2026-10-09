@@ -1,6 +1,6 @@
 {
   "name": "@distil/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "exports": "./src/main.ts",
   "tasks": {
     "distil": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run src/main.ts",

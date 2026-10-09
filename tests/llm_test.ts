@@ -6,6 +6,7 @@ const config: LlmConfig = {
   provider: "openai",
   model: "mistral-small-latest",
   baseUrl: "https://api.mistral.ai/v1",
+  manageLocal: false,
   apiKeyEnv: "MISTRAL_API_KEY",
   timeoutMs: 1_000,
   retries: 1,

@@ -5,8 +5,8 @@ import {
   parseVtt,
   parseYoutubeMetadata,
 } from "../src/content.ts";
-import type { FeedConfig } from "../src/types.ts";
-import { assertEquals, assertMatch } from "./assert.ts";
+import type { FeedConfig, ProgressUpdate } from "../src/types.ts";
+import { assert, assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
 const NOW = new Date("2026-10-08T12:00:00Z");
 
@@ -79,8 +79,10 @@ Deno.test("reports feed errors without failing the whole collection", async () =
     { url: "https://good/rss", name: "Good", type: "rss" },
     { url: "https://bad/rss", name: "Bad", type: "rss" },
   ];
+  const progress: ProgressUpdate[] = [];
   const result = await collectContent(feeds, {
     now: NOW,
+    onProgress: (update) => progress.push(update),
     fetcher: (input) => {
       if (String(input).includes("bad")) {
         return Promise.resolve(new Response("down", { status: 503 }));
@@ -98,6 +100,29 @@ Deno.test("reports feed errors without failing the whole collection", async () =
   assertEquals(result.health.Good.status, "success");
   assertEquals(result.health.Bad.status, "error");
   assertMatch(result.health.Bad.message, /503/);
+  assertEquals(progress.at(-1)?.completed, 2);
+  assertEquals(progress.at(-1)?.total, 2);
+  assert(progress.some((update) => update.message.includes("Good: success")));
+});
+
+Deno.test("cancels in-flight source requests", async () => {
+  const controller = new AbortController();
+  const pending = collectContent(
+    [{ url: "https://slow/rss", name: "Slow", type: "rss" }],
+    {
+      now: NOW,
+      signal: controller.signal,
+      fetcher: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort(new Error("stop now"));
+  await assertRejects(() => pending, /stop now/);
 });
 
 Deno.test("limits concurrent source collection", async () => {

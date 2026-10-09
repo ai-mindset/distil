@@ -1,11 +1,12 @@
 import { ensureOllamaReady, isLoopbackUrl } from "../src/ollama.ts";
 import type { LlmConfig } from "../src/types.ts";
-import { assert, assertEquals } from "./assert.ts";
+import { assert, assertEquals, assertRejects } from "./assert.ts";
 
 const config: LlmConfig = {
   provider: "ollama",
   model: "qwen2.5:3b",
   baseUrl: "http://127.0.0.1:11434/v1",
+  manageLocal: true,
   timeoutMs: 1_000,
   retries: 0,
 };
@@ -47,14 +48,55 @@ Deno.test("does not pull an existing latest-tag model", async () => {
   assert(!pulled);
 });
 
-Deno.test("skips Ollama lifecycle management for remote compatible endpoints", async () => {
+Deno.test("verifies unmanaged Ollama without running local commands", async () => {
   let fetched = false;
-  await ensureOllamaReady({ ...config, baseUrl: "https://ollama.com/v1" }, {
+  let started = false;
+  let pulled = false;
+  await ensureOllamaReady({
+    ...config,
+    baseUrl: "http://ollama.lan:11434/v1",
+    manageLocal: false,
+  }, {
     fetcher: () => {
       fetched = true;
-      return Promise.resolve(Response.json({}));
+      return Promise.resolve(Response.json({ models: [{ name: "qwen2.5:3b" }] }));
+    },
+    startServer: () => {
+      started = true;
+      return Promise.resolve();
+    },
+    pullModel: () => {
+      pulled = true;
+      return Promise.resolve();
     },
   });
-  assert(!fetched);
+  assert(fetched);
+  assert(!started);
+  assert(!pulled);
   assert(isLoopbackUrl("http://localhost:11434/v1"));
+});
+
+Deno.test("reports unavailable or incomplete unmanaged Ollama endpoints", async () => {
+  const unmanaged = { ...config, manageLocal: false };
+  let started = false;
+  await assertRejects(
+    () =>
+      ensureOllamaReady(unmanaged, {
+        fetcher: () => Promise.reject(new Error("connection refused")),
+        startServer: () => {
+          started = true;
+          return Promise.resolve();
+        },
+      }),
+    /Start the SSH tunnel.*connection refused/,
+  );
+  assert(!started);
+
+  await assertRejects(
+    () =>
+      ensureOllamaReady(unmanaged, {
+        fetcher: () => Promise.resolve(Response.json({ models: [] })),
+      }),
+    /Pull it on the remote Ollama server/,
+  );
 });

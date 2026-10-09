@@ -25,9 +25,30 @@ Deno.test("parses and normalizes the existing TOML shape", () => {
   assertEquals(config.llm.provider, "ollama");
   assertEquals(config.llm.model, "qwen2.5:3b");
   assertEquals(config.llm.baseUrl, "http://127.0.0.1:11434/v1");
+  assertEquals(config.llm.manageLocal, true);
   assertEquals(config.llm.retries, 3);
+  assertEquals(config.decision.enabled, false);
+  assertEquals(config.decision.baseUrl, "http://127.0.0.1:8000");
   assertEquals(config.output.readingTimeMinutes, 7);
   assertEquals(config.feeds[0].keywords, ["drug", "protein"]);
+});
+
+Deno.test("configures a loopback Strands decision service", () => {
+  const config = normalizeConfig(parseToml(`
+    [decision]
+    enabled = true
+    base_url = "http://localhost:8099/"
+    confidence_threshold = 0.85
+    timeout_seconds = 3
+
+    [[feeds]]
+    url = "https://example.com/feed.xml"
+  `));
+
+  assertEquals(config.decision.enabled, true);
+  assertEquals(config.decision.baseUrl, "http://localhost:8099");
+  assertEquals(config.decision.confidenceThreshold, 0.85);
+  assertEquals(config.decision.timeoutMs, 3_000);
 });
 
 Deno.test("configures Mistral through the OpenAI-compatible transport", () => {
@@ -44,6 +65,22 @@ Deno.test("configures Mistral through the OpenAI-compatible transport", () => {
   assertEquals(config.llm.baseUrl, "https://api.mistral.ai/v1");
   assertEquals(config.llm.apiKeyEnv, "MISTRAL_API_KEY");
   assertEquals(config.llm.provider, "openai");
+  assertEquals(config.llm.manageLocal, false);
+});
+
+Deno.test("does not manage a tunneled Ollama endpoint locally", () => {
+  const config = normalizeConfig(parseToml(`
+    [llm]
+    provider = "ollama"
+    model = "qwen2.5:3b"
+    base_url = "http://127.0.0.1:11434/v1"
+    manage_local = false
+
+    [[feeds]]
+    url = "https://example.com/feed.xml"
+  `));
+
+  assertEquals(config.llm.manageLocal, false);
 });
 
 Deno.test("detects YouTube feeds and validates regex patterns", async () => {
@@ -69,5 +106,43 @@ Deno.test("rejects non-http feed URLs", async () => {
   await assertRejects(
     () => normalizeConfig(parseToml('[[feeds]]\nurl = "file:///etc/passwd"')),
     /must use http or https/,
+  );
+});
+
+Deno.test("rejects remote or invalid decision services", async () => {
+  await assertRejects(
+    () =>
+      normalizeConfig(parseToml(`
+        [decision]
+        base_url = "https://decider.example"
+        [[feeds]]
+        url = "https://example.com/rss"
+      `)),
+    /loopback host/,
+  );
+  await assertRejects(
+    () =>
+      normalizeConfig(parseToml(`
+        [decision]
+        confidence_threshold = 1.1
+        [[feeds]]
+        url = "https://example.com/rss"
+      `)),
+    /between 0 and 1/,
+  );
+});
+
+Deno.test("rejects local Ollama management for a remote URL", async () => {
+  await assertRejects(
+    () =>
+      normalizeConfig(parseToml(`
+        [llm]
+        provider = "ollama"
+        base_url = "http://ollama.lan:11434/v1"
+        manage_local = true
+        [[feeds]]
+        url = "https://example.com/rss"
+      `)),
+    /requires a loopback Ollama endpoint/,
   );
 });

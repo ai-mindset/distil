@@ -1,4 +1,4 @@
-import { helpText, parseCliArgs } from "../src/cli.ts";
+import { helpText, parseCliArgs, VERSION } from "../src/cli.ts";
 import { assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
 Deno.test("parses run and serve CLI options", () => {
@@ -6,6 +6,10 @@ Deno.test("parses run and serve CLI options", () => {
   assertEquals(run.command, "run");
   assertEquals(run.config, "custom.toml");
   assertEquals(run.days, 14);
+
+  const preview = parseCliArgs(["preview", "--include-seen"]);
+  assertEquals(preview.command, "preview");
+  assertEquals(preview.includeSeen, true);
 
   const serve = parseCliArgs([
     "serve",
@@ -31,6 +35,14 @@ Deno.test("rejects unknown and invalid CLI options", async () => {
 Deno.test("documents all supported commands", () => {
   const help = helpText();
   assertMatch(help, /distil run/);
+  assertMatch(help, /distil preview/);
   assertMatch(help, /distil serve/);
   assertMatch(help, /distil setup/);
+});
+
+Deno.test("keeps the CLI and package versions in sync", async () => {
+  const manifest = JSON.parse(
+    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+  );
+  assertEquals(VERSION, manifest.version);
 });

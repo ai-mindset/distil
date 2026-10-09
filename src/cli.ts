@@ -1,21 +1,24 @@
 import { collectContent } from "./content.ts";
 import { loadConfig } from "./config.ts";
+import { StrandsDecisionClient } from "./decision.ts";
 import { OpenAICompatibleClient } from "./llm.ts";
 import { ensureOllamaReady } from "./ollama.ts";
 import { generateDistil } from "./prompts.ts";
+import { ContentSelector, type SelectionResult } from "./selection.ts";
 import { saveDigest } from "./storage.ts";
-import type { FeedHealth } from "./types.ts";
+import type { ProgressUpdate } from "./types.ts";
 import { DistilWebApp, startServer } from "./web.ts";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 export interface CliOptions {
-  command?: "run" | "serve" | "setup";
+  command?: "run" | "preview" | "serve" | "setup";
   config: string;
   days: number;
   hostname: string;
   port: number;
   browser: boolean;
+  includeSeen: boolean;
   help: boolean;
   version: boolean;
 }
@@ -27,13 +30,17 @@ export function parseCliArgs(args: string[]): CliOptions {
     hostname: "127.0.0.1",
     port: 5001,
     browser: true,
+    includeSeen: false,
     help: false,
     version: false,
   };
   const remaining = [...args];
   if (remaining[0] && !remaining[0].startsWith("-")) {
     const command = remaining.shift();
-    if (command !== "run" && command !== "serve" && command !== "setup") {
+    if (
+      command !== "run" && command !== "preview" && command !== "serve" &&
+      command !== "setup"
+    ) {
       throw new Error(`Unknown command: ${command}`);
     }
     options.command = command;
@@ -60,6 +67,12 @@ export function parseCliArgs(args: string[]): CliOptions {
           throw new Error("--no-browser does not take a value");
         }
         options.browser = false;
+        break;
+      case "--include-seen":
+        if (inlineValue !== undefined) {
+          throw new Error("--include-seen does not take a value");
+        }
+        options.includeSeen = true;
         break;
       case "--help":
       case "-h":
@@ -98,33 +111,62 @@ export async function main(args = Deno.args): Promise<number> {
 
     const config = await loadConfig(options.config);
     if (options.command === "setup") {
-      if (config.llm.provider !== "ollama") {
-        console.log("No local setup is required for this provider.");
-        return 0;
+      let localService = false;
+      if (config.llm.provider === "ollama") {
+        await ensureOllamaReady(config.llm);
+        console.log(`Ollama is ready with ${config.llm.model}.`);
+        localService = true;
       }
-      await ensureOllamaReady(config.llm);
-      console.log(`Ollama is ready with ${config.llm.model}.`);
+      if (config.decision.enabled) {
+        await new StrandsDecisionClient(config.decision).health();
+        console.log(`Strands Decider is ready at ${config.decision.baseUrl}.`);
+        localService = true;
+      }
+      if (!localService) {
+        console.log("No local setup is required for this provider.");
+      }
       return 0;
     }
 
-    if (options.command === "run") {
+    if (options.command === "run" || options.command === "preview") {
       console.log(`Fetching ${config.feeds.length} source(s)…`);
-      const result = await collectContent(config.feeds, { daysBack: options.days });
-      printHealth(result.health);
+      const result = await collectContent(config.feeds, {
+        daysBack: options.days,
+        onProgress: printProgress,
+      });
       if (result.items.length === 0) {
         throw new Error("No items collected. Increase --days or check source health.");
       }
       console.log(`Collected ${result.items.length} item(s).`);
+      const selector = new ContentSelector(config.decision, config.domain.focus);
+      const selection = await selector.select(result.items, {
+        includeSeen: options.includeSeen,
+        onProgress: printProgress,
+      });
+      printSelection(selection);
+      if (selection.warning) console.error(`Warning: ${selection.warning}`);
+      if (options.command === "preview") return 0;
+      if (selection.selected.length === 0) {
+        throw new Error(
+          "No new relevant items selected. Use --include-seen to reconsider seen items.",
+        );
+      }
       await ensureOllamaReady(config.llm);
       const client = new OpenAICompatibleClient(config.llm);
-      const digest = await generateDistil(client, result.items, {
+      const digest = await generateDistil(client, selection.selected, {
         domain: config.domain.focus,
         readingTimeMinutes: config.output.readingTimeMinutes,
-        batchSize: 3,
         onStage: (stage) => console.log(stage),
       });
       const path = await saveDigest(config.output.directory, digest);
       console.log(`Saved to ${path}`);
+      try {
+        await selector.markReviewed(selection);
+      } catch (error) {
+        console.error(
+          `Warning: digest saved, but seen-item state was not updated: ${message(error)}`,
+        );
+      }
       return 0;
     }
 
@@ -158,18 +200,21 @@ export function helpText(): string {
   return `Distil ${VERSION} — focused research digests from RSS and YouTube
 
 Usage:
-  distil run [--config FILE] [--days N]
+  distil run [--config FILE] [--days N] [--include-seen]
+  distil preview [--config FILE] [--days N] [--include-seen]
   distil serve [--config FILE] [--host HOST] [--port N] [--no-browser]
   distil setup [--config FILE]
 
 Commands:
   run       Fetch configured sources, generate a digest, and save it
+  preview   Fetch and explain item selection without calling the LLM
   serve     Start the local web UI (default: http://127.0.0.1:5001)
-  setup     Start local Ollama and pull the configured model
+  setup     Prepare and verify configured local services
 
 Options:
   --config FILE   Configuration file (default: config.toml)
   --days N        Lookback window for run (default: 7)
+  --include-seen  Reconsider items recorded by a completed run
   --host HOST     Web bind address (default: 127.0.0.1)
   --port N        Web port (default: 5001)
   --no-browser    Do not open the web UI automatically
@@ -177,19 +222,19 @@ Options:
   -V, --version   Show the version`;
 }
 
-function printHealth(health: Record<string, FeedHealth>): void {
-  for (const [name, status] of Object.entries(health)) {
-    const icon = status.status === "success"
-      ? "✓"
-      : status.status === "empty"
-      ? "○"
-      : "!";
-    console.log(
-      `${icon} ${name}: ${status.filteredEntries}/${status.totalEntries} item(s)${
-        status.message ? ` — ${status.message}` : ""
-      }`,
-    );
-  }
+function printSelection(result: SelectionResult): void {
+  console.log(
+    `Selected ${result.selected.length}/${result.items.length} item(s) for generation.`,
+  );
+}
+
+function printProgress(update: ProgressUpdate): void {
+  const label = update.stage === "collecting" ? "collect" : "select";
+  console.log(`[${label} ${update.completed}/${update.total}] ${update.message}`);
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function openBrowser(url: string): Promise<void> {

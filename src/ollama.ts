@@ -11,7 +11,10 @@ export async function ensureOllamaReady(
   config: LlmConfig,
   dependencies: OllamaDependencies = {},
 ): Promise<void> {
-  if (config.provider !== "ollama" || !isLoopbackUrl(config.baseUrl)) return;
+  if (config.provider !== "ollama") return;
+  if (config.manageLocal && !isLoopbackUrl(config.baseUrl)) {
+    throw new Error("Managed Ollama requires a loopback endpoint");
+  }
 
   const fetcher = dependencies.fetcher ?? fetch;
   const startServer = dependencies.startServer ?? startOllamaServer;
@@ -19,7 +22,21 @@ export async function ensureOllamaReady(
   const sleep = dependencies.sleep ?? delay;
   const tagsUrl = ollamaTagsUrl(config.baseUrl);
 
-  let models = await fetchModels(fetcher, tagsUrl).catch(() => undefined);
+  let fetchError: unknown;
+  let models: string[] | undefined;
+  try {
+    models = await fetchModels(fetcher, tagsUrl);
+  } catch (error) {
+    fetchError = error;
+  }
+  if (!models && !config.manageLocal) {
+    throw new Error(
+      `Could not reach the configured Ollama endpoint at ${
+        new URL(config.baseUrl).origin
+      }. ` +
+        `Start the SSH tunnel or remote service and retry: ${message(fetchError)}`,
+    );
+  }
   if (!models) {
     await startServer();
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -35,6 +52,12 @@ export async function ensureOllamaReady(
   }
 
   if (!hasModel(models, config.model)) {
+    if (!config.manageLocal) {
+      throw new Error(
+        `Ollama model ${config.model} is not available at the configured endpoint. ` +
+          "Pull it on the remote Ollama server and retry.",
+      );
+    }
     await pullModel(config.model);
   }
 }
@@ -115,4 +138,8 @@ function hasModel(models: string[], requested: string): boolean {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

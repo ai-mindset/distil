@@ -1,11 +1,21 @@
 [llm]
 # Ollama and every OpenAI-compatible service use the same chat-completions client.
 provider = "ollama"
-model = "qwen2.5:3b"
+model = "qwen3.6:27b"
 base_url = "http://127.0.0.1:11434/v1"
+# This endpoint is an SSH tunnel to another host; never run local Ollama commands.
+manage_local = false
 timeout_seconds = 900
 retries = 2
 # temperature = 0.2
+
+[decision]
+# Strands Decider runs as a separate local service; Distil talks to its HTTP API.
+# When disabled or unavailable, new items are included by deterministic safe fallback.
+enabled = true
+base_url = "http://127.0.0.1:8000"
+confidence_threshold = 0.9
+timeout_seconds = 10
 
 [output]
 directory = "~/distils"

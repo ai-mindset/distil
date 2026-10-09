@@ -13,6 +13,8 @@ repository code or stable Deno APIs.
 - [Deno 2](https://docs.deno.com/runtime/)
 - [Ollama](https://ollama.com/download) for local models, or an API key for a compatible
   hosted provider
+- [Strands Decider](https://github.com/strands-labs/strands-decider) only when optional
+  local relevance decisions are enabled
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) only for YouTube sources
 
 ## Quick start
@@ -22,8 +24,8 @@ With Ollama installed:
     deno task distil setup
     deno task distil run
 
-The setup command starts the local Ollama server when needed and pulls the model from
-`config.toml`. To use the local web UI instead:
+The setup command verifies configured local services. It starts Ollama and pulls its model
+only when `manage_local = true`. To use the local web UI instead:
 
     deno task distil serve
 
@@ -43,12 +45,27 @@ The checked-in configuration uses Ollama:
 
     [llm]
     provider = "ollama"
-    model = "qwen2.5:3b"
+    model = "qwen3.6:27b"
     base_url = "http://127.0.0.1:11434/v1"
+    manage_local = true
     timeout_seconds = 900
     retries = 2
 
-Legacy model values such as `ollama/qwen2.5:3b` remain supported.
+Legacy model values such as `ollama/qwen3.6:27b` remain supported.
+
+For Ollama running on another machine through an SSH tunnel, prevent Distil from invoking
+the local `ollama` executable:
+
+    ssh -NT -L 11434:127.0.0.1:11434 USER@OLLAMA_SERVER
+
+    [llm]
+    provider = "ollama"
+    model = "qwen3.6:27b"
+    base_url = "http://127.0.0.1:11434/v1"
+    manage_local = false
+
+Unmanaged endpoints are still checked for reachability and model availability. Pull a
+missing model on the server rather than on the Distil machine.
 
 ### Mistral
 
@@ -91,6 +108,46 @@ compatible provider when prompt compression is worth the extra local service. Po
 `base_url` at its OpenAI-compatible proxy. Distil does not require either service and does
 not embed OpenHands or Diffy in its runtime.
 
+## Local relevance decisions
+
+Distil can ask Strands Decider whether each new item is useful for the configured research
+focus before calling the generative model. Strands has a custom classification head, so it
+does not run through Ollama. Run its official local server separately:
+
+    pip install strands-decider
+    strands-decider serve StrandsAgents/strands-decider-2B-hobson-v21 --port 8000
+
+Then enable its loopback endpoint:
+
+    [decision]
+    enabled = true
+    base_url = "http://127.0.0.1:8000"
+    confidence_threshold = 0.9
+    timeout_seconds = 10
+
+Distil accepts an exclusion only when Strands meets the confidence threshold. The preview
+labels confident inclusions as **Keep**, confident exclusions as **Skip**, previously
+processed items as **Seen**, and low-confidence choices as **Review** while reporting
+whether Strands leaned include or exclude. A malformed response, timeout, or unavailable
+service is labelled **Fallback** and includes the item conservatively. Decision endpoints
+are restricted to loopback, so source material is never sent to a hosted fallback. Strands
+confidence measures its relevance classification; it does not establish the scientific
+truth, quality, or reproducibility of a source's claims.
+
+Distil does not install or start Strands. When decision selection is enabled,
+`deno task distil setup` verifies that its server is healthy alongside Ollama.
+
+Preview selection without calling the generative LLM:
+
+    deno task distil preview --days 7
+
+After a digest is saved, Distil records reviewed item fingerprints in
+`.distil/state.json`. Later runs skip them; use `--include-seen` or the web checkbox to
+reconsider them. Previewing never marks an item as seen.
+
+CLI `run` and `preview` report progress as each source completes and as Strands evaluates
+each new item. Press `Ctrl+C` to stop a CLI process.
+
 ## Sources and filtering
 
 Each `[[feeds]]` entry accepts:
@@ -110,6 +167,8 @@ treated as untrusted data in prompts.
 ## Commands
 
     deno task distil run --days 3
+    deno task distil run --include-seen
+    deno task distil preview --days 7
     deno task distil run --config custom.toml
     deno task distil serve --host 127.0.0.1 --port 5001 --no-browser
     deno task distil setup

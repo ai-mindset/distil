@@ -4,6 +4,7 @@ import type {
   FeedConfig,
   FeedHealth,
   FetchLike,
+  ProgressUpdate,
 } from "./types.ts";
 import {
   child,
@@ -31,6 +32,8 @@ export interface CollectionOptions {
   transcriptDirectory?: string;
   fetcher?: FetchLike;
   now?: Date;
+  signal?: AbortSignal;
+  onProgress?: (update: ProgressUpdate) => void;
   youtubeCollector?: (
     feed: FeedConfig,
     options: YoutubeOptions,
@@ -41,6 +44,7 @@ export interface YoutubeOptions {
   daysBack: number;
   outputDirectory: string;
   now: Date;
+  signal?: AbortSignal;
 }
 
 export interface YoutubeMetadata {
@@ -60,8 +64,23 @@ export async function collectContent(
   const fetcher = options.fetcher ?? fetch;
   const youtubeCollector = options.youtubeCollector ?? collectYoutubeTranscripts;
   const transcriptDirectory = options.transcriptDirectory ?? "transcripts";
+  let completed = 0;
+  options.onProgress?.({
+    stage: "collecting",
+    completed,
+    total: feeds.length,
+    message: `Starting ${feeds.length} source(s)`,
+  });
 
   const results = await mapConcurrent(feeds, SOURCE_CONCURRENCY, async (feed) => {
+    options.signal?.throwIfAborted();
+    options.onProgress?.({
+      stage: "collecting",
+      completed,
+      total: feeds.length,
+      message: `Fetching ${feed.name}`,
+    });
+    let result: { feed: FeedConfig; items: ContentItem[]; health: FeedHealth };
     if (feed.type === "youtube") {
       const started = performance.now();
       try {
@@ -69,6 +88,7 @@ export async function collectContent(
           daysBack,
           outputDirectory: transcriptDirectory,
           now,
+          signal: options.signal,
         });
         const health: FeedHealth = {
           url: feed.url,
@@ -80,16 +100,35 @@ export async function collectContent(
           keywords: feed.keywords,
           maxItems: feed.maxItems,
         };
-        return { feed, items, health };
+        result = { feed, items, health };
       } catch (error) {
-        return {
+        if (options.signal?.aborted) throw options.signal.reason;
+        result = {
           feed,
           items: [],
           health: errorHealth(feed, error, performance.now() - started),
         };
       }
+    } else {
+      result = await fetchRss(feed, {
+        daysBack,
+        timeoutMs,
+        fetcher,
+        now,
+        signal: options.signal,
+      });
     }
-    return await fetchRss(feed, { daysBack, timeoutMs, fetcher, now });
+    completed++;
+    options.onProgress?.({
+      stage: "collecting",
+      completed,
+      total: feeds.length,
+      message:
+        `${feed.name}: ${result.health.status} — ${result.health.filteredEntries}/${result.health.totalEntries} item(s)${
+          result.health.message ? ` (${result.health.message})` : ""
+        }`,
+    });
+    return result;
   });
 
   const health: Record<string, FeedHealth> = {};
@@ -116,6 +155,7 @@ export async function fetchRss(
     timeoutMs: number;
     fetcher?: FetchLike;
     now?: Date;
+    signal?: AbortSignal;
   },
 ): Promise<{ feed: FeedConfig; items: ContentItem[]; health: FeedHealth }> {
   const fetcher = options.fetcher ?? fetch;
@@ -129,7 +169,9 @@ export async function fetchRss(
         "user-agent": "distil/0.2 (+https://github.com/ai-mindset/distil)",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(options.timeoutMs),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs)])
+        : AbortSignal.timeout(options.timeoutMs),
     });
     if (!response.ok) {
       throw new Error(`Feed returned HTTP ${response.status}`);
@@ -182,6 +224,7 @@ export async function fetchRss(
     };
     return { feed, items, health };
   } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason;
     return {
       feed,
       items: [],
@@ -271,8 +314,10 @@ export async function collectYoutubeTranscripts(
       args,
       stdout: "piped",
       stderr: "piped",
+      signal: options.signal,
     }).output();
   } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason;
     if (error instanceof Deno.errors.NotFound) {
       throw new Error("yt-dlp is required for YouTube sources but was not found");
     }

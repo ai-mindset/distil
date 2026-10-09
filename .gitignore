@@ -1,5 +1,6 @@
 history/
 transcripts/
+.distil/
 distil-bin
 distil-bin.exe
 coverage/

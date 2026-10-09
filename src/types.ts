@@ -4,6 +4,7 @@ export interface LlmConfig {
   provider: Provider;
   model: string;
   baseUrl: string;
+  manageLocal: boolean;
   apiKeyEnv?: string;
   timeoutMs: number;
   retries: number;
@@ -13,6 +14,13 @@ export interface LlmConfig {
 export interface OutputConfig {
   directory: string;
   readingTimeMinutes: number;
+}
+
+export interface DecisionConfig {
+  enabled: boolean;
+  baseUrl: string;
+  confidenceThreshold: number;
+  timeoutMs: number;
 }
 
 export interface FeedConfig {
@@ -26,6 +34,7 @@ export interface FeedConfig {
 
 export interface Config {
   llm: LlmConfig;
+  decision: DecisionConfig;
   output: OutputConfig;
   domain: {
     focus: string;
@@ -59,6 +68,13 @@ export interface FeedHealth {
 export interface CollectionResult {
   items: ContentItem[];
   health: Record<string, FeedHealth>;
+}
+
+export interface ProgressUpdate {
+  stage: "collecting" | "selecting";
+  completed: number;
+  total: number;
+  message: string;
 }
 
 export interface ChatMessage {

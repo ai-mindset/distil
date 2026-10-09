@@ -1,4 +1,4 @@
-import type { Config, FeedConfig, LlmConfig, Provider } from "./types.ts";
+import type { Config, DecisionConfig, FeedConfig, LlmConfig, Provider } from "./types.ts";
 
 interface TomlTable {
   [key: string]: TomlValue;
@@ -8,6 +8,7 @@ type TomlValue = string | number | boolean | TomlValue[] | TomlTable;
 
 const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_OPENAI_URL = "https://api.mistral.ai/v1";
+const DEFAULT_DECISION_URL = "http://127.0.0.1:8000";
 
 export async function loadConfig(path = "config.toml"): Promise<Config> {
   let text: string;
@@ -94,8 +95,17 @@ export function normalizeConfig(raw: TomlTable): Config {
   const retries = nonNegativeInteger(llmRaw.retries, 2, "llm.retries");
   const apiKeyEnv = stringValue(llmRaw.api_key_env, inferApiKeyEnv(baseUrl));
   const temperature = optionalNumber(llmRaw.temperature, "llm.temperature");
+  const manageLocal = booleanValue(
+    llmRaw.manage_local,
+    provider === "ollama" && isLoopbackHttpUrl(baseUrl),
+    "llm.manage_local",
+  );
+  if (manageLocal && (provider !== "ollama" || !isLoopbackHttpUrl(baseUrl))) {
+    throw new Error("llm.manage_local requires a loopback Ollama endpoint");
+  }
 
   const outputRaw = table(raw.output);
+  const decisionRaw = table(raw.decision);
   const domainRaw = table(raw.domain);
   const feedsRaw = Array.isArray(raw.feeds) ? raw.feeds : [];
   const feeds = feedsRaw.map((value, index) => normalizeFeed(value, index));
@@ -105,14 +115,36 @@ export function normalizeConfig(raw: TomlTable): Config {
     provider,
     model,
     baseUrl,
+    manageLocal,
     apiKeyEnv: apiKeyEnv || undefined,
     timeoutMs: timeoutSeconds * 1000,
     retries,
     temperature,
   };
+  const decisionBaseUrl = trimTrailingSlash(
+    stringValue(decisionRaw.base_url, DEFAULT_DECISION_URL),
+  );
+  assertLoopbackHttpUrl(decisionBaseUrl, "decision.base_url");
+  const decision: DecisionConfig = {
+    enabled: booleanValue(decisionRaw.enabled, false, "decision.enabled"),
+    baseUrl: decisionBaseUrl,
+    confidenceThreshold: boundedNumber(
+      decisionRaw.confidence_threshold,
+      0.9,
+      0,
+      1,
+      "decision.confidence_threshold",
+    ),
+    timeoutMs: positiveNumber(
+      decisionRaw.timeout_seconds,
+      10,
+      "decision.timeout_seconds",
+    ) * 1_000,
+  };
 
   return {
     llm,
+    decision,
     output: {
       directory: stringValue(outputRaw.directory, "~/distils"),
       readingTimeMinutes: positiveInteger(
@@ -349,6 +381,33 @@ function optionalNumber(value: TomlValue | undefined, name: string): number | un
   return value;
 }
 
+function booleanValue(
+  value: TomlValue | undefined,
+  fallback: boolean,
+  name: string,
+): boolean {
+  const result = value === undefined ? fallback : value;
+  if (typeof result !== "boolean") throw new Error(`${name} must be a boolean`);
+  return result;
+}
+
+function boundedNumber(
+  value: TomlValue | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  name: string,
+): number {
+  const result = value === undefined ? fallback : value;
+  if (
+    typeof result !== "number" || !Number.isFinite(result) || result < minimum ||
+    result > maximum
+  ) {
+    throw new Error(`${name} must be between ${minimum} and ${maximum}`);
+  }
+  return result;
+}
+
 function positiveNumber(
   value: TomlValue | undefined,
   fallback: number,
@@ -393,6 +452,18 @@ function assertHttpUrl(value: string, name: string): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`${name} must use http or https`);
   }
+}
+
+function assertLoopbackHttpUrl(value: string, name: string): void {
+  assertHttpUrl(value, name);
+  if (!isLoopbackHttpUrl(value)) {
+    throw new Error(`${name} must use a loopback host`);
+  }
+}
+
+function isLoopbackHttpUrl(value: string): boolean {
+  const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function trimTrailingSlash(value: string): string {
