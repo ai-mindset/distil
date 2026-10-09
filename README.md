@@ -194,6 +194,11 @@ release consists of one single-file build per supported Deno `--target`, rather 
 binary that runs on every operating system. Deno currently labels QuickJS and bundled
 compilation experimental; smoke-test each release artifact on its target platform.
 
+Tagged releases build and smoke-test QuickJS archives for Linux x86-64, macOS ARM64, and
+Windows x86-64. Create a tag matching the version in `deno.json`, such as `v0.3.0`; the
+release workflow verifies the tag, generates SHA-256 checksums and provenance
+attestations, and publishes the archives without overwriting an existing release.
+
 ## Development
 
     deno task check
