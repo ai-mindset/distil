@@ -1,5 +1,6 @@
 import type { ChatClient, ChatMessage, Config, ContentItem } from "../src/types.ts";
 import { DistilWebApp } from "../src/web.ts";
+import type { SelectionPipeline, SelectionResult } from "../src/selection.ts";
 import { assertEquals, assertMatch } from "./assert.ts";
 
 class WebClient implements ChatClient {
@@ -13,13 +14,37 @@ class WebClient implements ChatClient {
   }
 }
 
+class WebSelector implements SelectionPipeline {
+  marked = 0;
+
+  select(items: ContentItem[]): Promise<SelectionResult> {
+    return Promise.resolve({
+      items: items.map((item, index) => ({
+        item,
+        fingerprint: `fingerprint-${index}`,
+        selected: true,
+        kind: "selected",
+        reason: "Selected for test",
+      })),
+      selected: items,
+    });
+  }
+
+  markReviewed(result: SelectionResult): Promise<void> {
+    this.marked += result.items.length;
+    return Promise.resolve();
+  }
+}
+
 Deno.test("web fetch and generation share the same pipeline", async () => {
   const historyDirectory = await Deno.makeTempDir();
   try {
+    const selector = new WebSelector();
     const app = new DistilWebApp({
       config: testConfig(),
       client: new WebClient(),
       historyDirectory,
+      selector,
       now: () => new Date("2026-10-08T12:00:00Z"),
       collect: () =>
         Promise.resolve({
@@ -49,8 +74,12 @@ Deno.test("web fetch and generation share the same pipeline", async () => {
         body: JSON.stringify({ days: 7 }),
       }),
     );
-    assertEquals(fetched.status, 200);
-    assertEquals((await fetched.json()).itemCount, 1);
+    assertEquals(fetched.status, 202);
+    const fetchState = await completedFetch(app);
+    const fetchPayload = fetchState.result;
+    assertEquals(fetchPayload.itemCount, 1);
+    assertEquals(fetchPayload.fetchedCount, 1);
+    assertEquals(fetchPayload.items[0].reason, "Selected for test");
 
     const generated = await app.handler(
       new Request("http://localhost/api/generate", { method: "POST" }),
@@ -61,6 +90,7 @@ Deno.test("web fetch and generation share the same pipeline", async () => {
     assertMatch(events, /event: complete/);
     const filename = events.match(/"file":"([^"]+)"/)?.[1];
     if (!filename) throw new Error("completion event did not include a filename");
+    assertEquals(selector.marked, 1);
 
     const history = await app.handler(new Request("http://localhost/history"));
     const historyHtml = await history.text();
@@ -74,6 +104,60 @@ Deno.test("web fetch and generation share the same pipeline", async () => {
   } finally {
     await Deno.remove(historyDirectory, { recursive: true });
   }
+});
+
+Deno.test("web fetch survives navigation and can be interrupted and reset", async () => {
+  let signal: AbortSignal | undefined;
+  const app = new DistilWebApp({
+    config: testConfig(),
+    client: new WebClient(),
+    selector: new WebSelector(),
+    collect: (_days, options) => {
+      signal = options.signal;
+      options.onProgress({
+        stage: "collecting",
+        completed: 0,
+        total: 1,
+        message: "Fetching slow source",
+      });
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+          once: true,
+        });
+      });
+    },
+  });
+
+  const started = await app.handler(
+    new Request("http://localhost/api/fetch", { method: "POST" }),
+  );
+  assertEquals(started.status, 202);
+
+  const duplicate = await app.handler(
+    new Request("http://localhost/api/fetch", { method: "POST" }),
+  );
+  assertEquals(duplicate.status, 409);
+  assertEquals((await duplicate.json()).status, "running");
+
+  assertEquals((await app.handler(new Request("http://localhost/history"))).status, 200);
+  assertEquals((await app.handler(new Request("http://localhost/"))).status, 200);
+  const resumed = await app.handler(new Request("http://localhost/api/fetch/status"));
+  const resumedState = await resumed.json();
+  assertEquals(resumedState.status, "running");
+  assertMatch(resumedState.progress.message, /slow source/);
+
+  const reset = await app.handler(
+    new Request("http://localhost/api/fetch", { method: "DELETE" }),
+  );
+  assertEquals(reset.status, 200);
+  assertEquals((await reset.json()).status, "idle");
+  assertEquals(signal?.aborted, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(
+    (await (await app.handler(new Request("http://localhost/api/fetch/status"))).json())
+      .status,
+    "idle",
+  );
 });
 
 Deno.test("web validates days and confines history paths", async () => {
@@ -133,7 +217,34 @@ Deno.test("home page includes security headers and accessible controls", async (
   assertMatch(content, /--bg:#111827/);
   assertMatch(content, /--card:#1f2937/);
   assertMatch(content, /Feed health/);
+  assertMatch(content, /Stop and reset/);
+  assertMatch(content, /\/api\/fetch\/status/);
+  assertMatch(content, /review: \{ label: "Review"/);
+  assertMatch(content, /fallback: \{ label: "Fallback"/);
+  assertMatch(content, /seen: \{ label: "Seen"/);
+  const script = content.match(/<script>([\s\S]+)<\/script>/)?.[1];
+  if (!script) throw new Error("home page script was missing");
+  new Function(script);
 });
+
+interface CompletedFetchState {
+  status: string;
+  result: {
+    itemCount: number;
+    fetchedCount: number;
+    items: Array<{ reason: string }>;
+  };
+}
+
+async function completedFetch(app: DistilWebApp): Promise<CompletedFetchState> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const response = await app.handler(new Request("http://localhost/api/fetch/status"));
+    const state = await response.json();
+    if (state.status !== "running") return state as CompletedFetchState;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("fetch job did not complete");
+}
 
 function testConfig(): Config {
   return {

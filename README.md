@@ -29,9 +29,11 @@ only when `manage_local = true`. To use the local web UI instead:
 
     deno task distil serve
 
-The UI listens on `http://127.0.0.1:5001`. It fetches sources, previews feed health and
-matching items, streams generation progress, and stores collision-safe history files under
-`history/`.
+The UI listens on `http://127.0.0.1:5001`. Fetching runs as an in-process background job:
+the page reports source and Strands progress, and leaving for history then returning
+resumes the same view. **Stop and reset** cancels an in-flight fetch and clears its cached
+result. The UI previews feed health and explained item-selection decisions, streams
+generation progress, and stores collision-safe history files under `history/`.
 
 ## LLM configuration
 

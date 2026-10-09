@@ -10,8 +10,12 @@ export function homePage(): string {
       "<h2>Collect</h2>",
       '<label for="days">Days to look back</label>',
       '<div class="row"><input id="days" type="number" min="1" max="30" value="7">',
-      '<button id="fetch">Fetch items</button></div>',
+      '<label class="check"><input id="include-seen" type="checkbox"> Include seen</label>',
+      '<button id="fetch">Fetch items</button>',
+      '<button id="cancel-fetch" class="secondary" disabled>Stop and reset</button></div>',
       '<p id="fetch-status" class="status" aria-live="polite"></p>',
+      '<progress id="fetch-progress" hidden></progress>',
+      '<ol id="fetch-log" class="progress-log" aria-live="polite"></ol>',
       '<div id="preview"></div>',
       "</section>",
       '<section class="card">',
@@ -123,17 +127,28 @@ const CSS = String.raw`
   label { display:block; color:var(--muted); margin-bottom:.35rem; }
   input,button { font:inherit; border-radius:9px; border:1px solid var(--line);
     padding:.68rem .9rem; } input { width:8rem; background:var(--input); color:var(--ink); }
+  .check { display:flex; align-items:center; gap:.45rem; margin:0; }
+  .check input { width:auto; accent-color:var(--accent); }
   button { cursor:pointer; background:var(--accent); color:var(--accent-ink);
     border-color:transparent; font-weight:700; } button:hover:not(:disabled) {
     background:var(--accent-hover); transform:translateY(-1px); }
+  button.secondary { background:transparent; color:var(--link); border-color:var(--link); }
+  button.secondary:hover:not(:disabled) { background:var(--pre-bg); }
   button:disabled { opacity:.45; cursor:not-allowed; }
   button:focus-visible,input:focus-visible,a:focus-visible,pre:focus-visible {
     outline:3px solid var(--focus-ring); outline-offset:3px;
     box-shadow:0 0 0 3px var(--focus); }
   .theme { position:fixed; right:1rem; top:1rem; width:2.75rem; padding:.55rem; }
   .status { min-height:1.5rem; color:var(--muted); }
+  progress { width:100%; height:.65rem; accent-color:var(--accent); }
+  .progress-log { max-height:10rem; overflow:auto; margin:.65rem 0 1rem;
+    padding-left:1.5rem; color:var(--muted); font-size:.9rem; }
   details { border-top:1px solid var(--line); padding:.6rem 0; }
   summary { cursor:pointer; font-weight:700; } ul { padding-left:1.3rem; }
+  .decision { margin:.55rem 0; } .decision small { display:block; color:var(--muted); }
+  .tag { display:inline-block; min-width:3rem; margin-right:.45rem; color:var(--muted);
+    font-size:.75rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+  .keep .tag,.review .tag { color:var(--link); }
   pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--pre-bg);
     color:var(--pre-ink); border:1px solid var(--line); padding:1rem; border-radius:10px;
     max-height:34rem; overflow:auto; }
@@ -152,71 +167,184 @@ const HOME_SCRIPT = String.raw`
   });
 
   const fetchButton = document.querySelector("#fetch");
+  const cancelFetchButton = document.querySelector("#cancel-fetch");
   const generateButton = document.querySelector("#generate");
   const fetchStatus = document.querySelector("#fetch-status");
+  const fetchProgress = document.querySelector("#fetch-progress");
+  const fetchLog = document.querySelector("#fetch-log");
   const generateStatus = document.querySelector("#generate-status");
   const preview = document.querySelector("#preview");
   const output = document.querySelector("#output");
+  const dispositions = {
+    selected: { label: "Keep", className: "keep" },
+    excluded: { label: "Skip", className: "skip" },
+    review: { label: "Review", className: "review" },
+    seen: { label: "Seen", className: "seen" },
+    fallback: { label: "Fallback", className: "fallback" },
+  };
+  let pollTimer;
 
   fetchButton.addEventListener("click", async () => {
     fetchButton.disabled = true;
     generateButton.disabled = true;
-    fetchStatus.textContent = "Fetching sources…";
     preview.replaceChildren();
     try {
       const response = await fetch("/api/fetch", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ days: Number(document.querySelector("#days").value) }),
+        body: JSON.stringify({
+          days: Number(document.querySelector("#days").value),
+          includeSeen: document.querySelector("#include-seen").checked,
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Fetch failed");
-      fetchStatus.textContent = "Fetched " + data.itemCount + " items.";
-      const healthDetails = document.createElement("details");
-      const healthSummary = document.createElement("summary");
-      healthSummary.textContent = "Feed health";
-      const healthList = document.createElement("ul");
-      for (const [name, health] of Object.entries(data.health)) {
-        const row = document.createElement("li");
-        row.textContent = name + ": " + health.status + " — " +
-          health.filteredEntries + "/" + health.totalEntries + " items" +
-          (health.message ? " (" + health.message + ")" : "");
-        healthList.append(row);
+      if (!response.ok && data.status !== "running") {
+        throw new Error(data.error || "Fetch failed");
       }
-      healthDetails.append(healthSummary, healthList);
-      preview.append(healthDetails);
-      const groups = data.items.reduce((result, item) => {
-        (result[item.source] ||= []).push(item);
-        return result;
-      }, {});
-      for (const [source, items] of Object.entries(groups)) {
-        const details = document.createElement("details");
-        const summary = document.createElement("summary");
-        summary.textContent = source + " (" + items.length + ")";
-        const list = document.createElement("ul");
-        for (const item of items) {
-          const row = document.createElement("li");
-          const link = document.createElement("a");
-          link.href = item.link;
-          link.target = "_blank";
-          link.rel = "noreferrer";
-          link.textContent = item.title;
-          row.append(link);
-          list.append(row);
-        }
-        details.append(summary, list);
-        preview.append(details);
-      }
-      generateButton.disabled = data.itemCount === 0;
+      renderFetchState(data);
     } catch (error) {
       fetchStatus.textContent = error.message;
-    } finally {
       fetchButton.disabled = false;
     }
   });
 
+  cancelFetchButton.addEventListener("click", async () => {
+    cancelFetchButton.disabled = true;
+    fetchStatus.textContent = "Stopping fetch…";
+    try {
+      const response = await fetch("/api/fetch", { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not reset fetch");
+      preview.replaceChildren();
+      renderFetchState(data);
+    } catch (error) {
+      fetchStatus.textContent = error.message;
+      cancelFetchButton.disabled = false;
+    }
+  });
+
+  async function refreshFetchState() {
+    try {
+      const response = await fetch("/api/fetch/status", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not read fetch progress");
+      renderFetchState(data);
+    } catch (error) {
+      fetchStatus.textContent = error.message;
+      schedulePoll();
+    }
+  }
+
+  function renderFetchState(data) {
+    clearTimeout(pollTimer);
+    renderProgress(data);
+    if (data.status === "running") {
+      fetchButton.disabled = true;
+      cancelFetchButton.disabled = false;
+      generateButton.disabled = true;
+      fetchStatus.textContent = data.progress?.message || "Fetching sources…";
+      schedulePoll();
+      return;
+    }
+    fetchButton.disabled = false;
+    cancelFetchButton.disabled = data.status === "idle";
+    if (data.status === "complete" && data.result) {
+      const result = data.result;
+      fetchStatus.textContent = "Fetched " + result.fetchedCount + " items; selected " +
+        result.selectedCount + " and skipped " + result.skippedCount + "." +
+        (result.warning ? " " + result.warning : "");
+      renderFetchResult(result);
+      generateButton.disabled = result.itemCount === 0;
+      return;
+    }
+    generateButton.disabled = true;
+    if (data.status === "error") {
+      fetchStatus.textContent = data.error || "Fetch failed";
+    } else {
+      fetchStatus.textContent = "Ready.";
+      fetchProgress.hidden = true;
+      fetchLog.replaceChildren();
+    }
+  }
+
+  function renderProgress(data) {
+    const progress = data.progress;
+    if (progress && progress.total > 0) {
+      fetchProgress.hidden = false;
+      fetchProgress.max = progress.total;
+      fetchProgress.value = progress.completed;
+    } else {
+      fetchProgress.hidden = true;
+    }
+    fetchLog.replaceChildren();
+    for (const event of data.events || []) {
+      const row = document.createElement("li");
+      row.textContent = "[" + event.stage + " " + event.completed + "/" + event.total +
+        "] " + event.message;
+      fetchLog.append(row);
+    }
+    fetchLog.scrollTop = fetchLog.scrollHeight;
+  }
+
+  function renderFetchResult(data) {
+    preview.replaceChildren();
+    const healthDetails = document.createElement("details");
+    const healthSummary = document.createElement("summary");
+    healthSummary.textContent = "Feed health";
+    const healthList = document.createElement("ul");
+    for (const [name, health] of Object.entries(data.health)) {
+      const row = document.createElement("li");
+      row.textContent = name + ": " + health.status + " — " +
+        health.filteredEntries + "/" + health.totalEntries + " items" +
+        (health.message ? " (" + health.message + ")" : "");
+      healthList.append(row);
+    }
+    healthDetails.append(healthSummary, healthList);
+    preview.append(healthDetails);
+    const groups = data.items.reduce((result, item) => {
+      (result[item.source] ||= []).push(item);
+      return result;
+    }, {});
+    for (const [source, items] of Object.entries(groups)) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      const selected = items.filter((item) => item.selected).length;
+      summary.textContent = source + " (" + selected + "/" + items.length + " selected)";
+      const list = document.createElement("ul");
+      for (const item of items) {
+        const disposition = dispositions[item.kind] ||
+          (item.selected
+            ? { label: "Keep", className: "keep" }
+            : { label: "Skip", className: "skip" });
+        const row = document.createElement("li");
+        row.className = "decision " + disposition.className;
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = disposition.label;
+        const link = document.createElement("a");
+        link.href = item.link;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.textContent = item.title;
+        const reason = document.createElement("small");
+        reason.textContent = item.reason;
+        row.append(tag, link, reason);
+        list.append(row);
+      }
+      details.append(summary, list);
+      preview.append(details);
+    }
+  }
+
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(refreshFetchState, 600);
+  }
+
   generateButton.addEventListener("click", async () => {
     generateButton.disabled = true;
+    let completed = false;
+    let generationWarning = "";
     output.textContent = "";
     generateStatus.textContent = "Starting…";
     try {
@@ -229,16 +357,21 @@ const HOME_SCRIPT = String.raw`
         if (event === "stage") generateStatus.textContent = data.message;
         if (event === "content") output.textContent += data.content;
         if (event === "complete") {
-          generateStatus.textContent = "Saved to " + data.file;
+          completed = true;
+          generateStatus.textContent = "Saved to " + data.file +
+            (generationWarning ? ". " + generationWarning : "");
         }
+        if (event === "warning") generationWarning = data.message;
         if (event === "error") throw new Error(data.message);
       });
     } catch (error) {
       generateStatus.textContent = error.message;
     } finally {
-      generateButton.disabled = false;
+      generateButton.disabled = completed;
     }
   });
+
+  void refreshFetchState();
 
   async function readEvents(response, callback) {
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
