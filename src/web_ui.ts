@@ -27,6 +27,7 @@ export function homePage(): string {
       "<h2>Generate</h2>",
       '<button id="generate" disabled>Generate digest</button>',
       '<p id="generate-status" class="status" aria-live="polite"></p>',
+      '<progress id="generate-progress" aria-label="Digest generation in progress" hidden></progress>',
       '<pre id="output" tabindex="0"></pre>',
       "</section>",
       '<a href="/history">View history →</a>',
@@ -194,6 +195,7 @@ const HOME_SCRIPT = String.raw`
   const includeUnresolvedButton = document.querySelector("#include-unresolved");
   const excludeUnresolvedButton = document.querySelector("#exclude-unresolved");
   const generateStatus = document.querySelector("#generate-status");
+  const generateProgress = document.querySelector("#generate-progress");
   const preview = document.querySelector("#preview");
   const output = document.querySelector("#output");
   const dispositions = {
@@ -453,6 +455,8 @@ const HOME_SCRIPT = String.raw`
     let generationWarning = "";
     output.textContent = "";
     generateStatus.textContent = "Starting…";
+    generateProgress.removeAttribute("value");
+    generateProgress.hidden = false;
     try {
       const response = await fetch("/api/generate", { method: "POST" });
       if (!response.ok) {
@@ -473,6 +477,7 @@ const HOME_SCRIPT = String.raw`
     } catch (error) {
       generateStatus.textContent = error.message;
     } finally {
+      generateProgress.hidden = true;
       generateButton.disabled = completed;
     }
   });

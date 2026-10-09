@@ -342,6 +342,9 @@ Deno.test("home page includes security headers and accessible controls", async (
   assertMatch(content, /--card:#1f2937/);
   assertMatch(content, /Feed health/);
   assertMatch(content, /Stop and reset/);
+  assertMatch(content, /id="generate-progress"/);
+  assertMatch(content, /generateProgress\.hidden = false/);
+  assertMatch(content, /generateProgress\.hidden = true/);
   assertMatch(content, /Include all/);
   assertMatch(content, /Exclude all/);
   assertMatch(content, /\/api\/fetch\/status/);

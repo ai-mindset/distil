@@ -35,7 +35,8 @@ resumes the same view. **Stop and reset** cancels an in-flight fetch and clears 
 result. The UI previews feed health and explained item-selection decisions. Every
 low-confidence or failed decision must be explicitly included or excluded before the UI
 enables generation. It then streams generation progress and stores collision-safe history
-files under `history/`.
+files under `history/`. An indeterminate progress bar remains visible while the model is
+working because compatible LLM APIs do not report a reliable completion percentage.
 
 ## LLM configuration
 
