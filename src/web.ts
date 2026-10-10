@@ -19,8 +19,18 @@ import type {
 } from "./types.ts";
 import { historyPage, homePage, notFoundPage, viewPage } from "./web_ui.ts";
 
+export function distilLogoUrl(
+  moduleUrl: string | URL,
+  standalone: boolean,
+): URL {
+  // Bundling emits the standalone module at the virtual filesystem root while
+  // compile.include keeps the logo at its repository-relative assets path.
+  const path = standalone ? "./assets/distil-logo.png" : "../assets/distil-logo.png";
+  return new URL(path, moduleUrl);
+}
+
 const DISTIL_LOGO = Deno.readFileSync(
-  new URL("../assets/distil-logo.png", import.meta.url),
+  distilLogoUrl(import.meta.url, Deno.build.standalone),
 );
 
 export interface WebDependencies {

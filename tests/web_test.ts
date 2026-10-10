@@ -1,7 +1,21 @@
 import type { ChatClient, ChatMessage, Config, ContentItem } from "../src/types.ts";
-import { DistilWebApp } from "../src/web.ts";
+import { distilLogoUrl, DistilWebApp } from "../src/web.ts";
 import type { SelectionPipeline, SelectionResult } from "../src/selection.ts";
 import { assertEquals, assertMatch } from "./assert.ts";
+
+Deno.test("logo path supports source and bundled standalone layouts", () => {
+  assertEquals(
+    distilLogoUrl("file:///workspace/src/web.ts", false).href,
+    "file:///workspace/assets/distil-logo.png",
+  );
+  assertEquals(
+    distilLogoUrl(
+      "file:///tmp/deno-compile-distil/.deno_compile_bundle.mjs",
+      true,
+    ).href,
+    "file:///tmp/deno-compile-distil/assets/distil-logo.png",
+  );
+});
 
 class WebClient implements ChatClient {
   complete(): Promise<string> {
