@@ -1,0 +1,243 @@
+name: Cross-platform packaging
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DENO_VERSION: v2.9.7
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - run: deno task check
+      - name: Compile QuickJS executable
+        run: |
+          mkdir -p dist
+          deno compile \
+            --engine quickjs \
+            --bundle \
+            --minify \
+            --allow-read \
+            --allow-write \
+            --allow-net \
+            --allow-env \
+            --allow-run \
+            --target x86_64-unknown-linux-gnu \
+            --output dist/distil \
+            src/main.ts
+      - name: Smoke-test executable
+        run: |
+          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          test "$(dist/distil --version)" = "distil ${version}"
+          dist/distil --help
+      - name: Package release archive
+        run: |
+          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          name="distil-v${version}-linux-x86_64"
+          package="dist/release/${name}"
+          mkdir -p "$package"
+          cp dist/distil config.toml README.md LICENSE "$package/"
+          chmod +x "$package/distil"
+          tar -czf "dist/${name}.tar.gz" \
+            -C "$package" distil config.toml README.md LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distil-linux-x86_64
+          path: dist/distil-v*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - run: deno task check
+      - name: Compile QuickJS executable
+        run: |
+          mkdir -p dist
+          deno compile \
+            --engine quickjs \
+            --bundle \
+            --minify \
+            --allow-read \
+            --allow-write \
+            --allow-net \
+            --allow-env \
+            --allow-run \
+            --target aarch64-apple-darwin \
+            --output dist/distil \
+            src/main.ts
+      - name: Smoke-test executable
+        run: |
+          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          test "$(dist/distil --version)" = "distil ${version}"
+          dist/distil --help
+      - name: Package release archive
+        run: |
+          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          name="distil-v${version}-macos-aarch64"
+          package="dist/release/${name}"
+          mkdir -p "$package"
+          cp dist/distil config.toml README.md LICENSE "$package/"
+          chmod +x "$package/distil"
+          tar -czf "dist/${name}.tar.gz" \
+            -C "$package" distil config.toml README.md LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distil-macos-aarch64
+          path: dist/distil-v*-macos-aarch64.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - run: deno task check
+      - name: Compile QuickJS executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "dist" | Out-Null
+          deno compile `
+            --engine quickjs `
+            --bundle `
+            --minify `
+            --allow-read `
+            --allow-write `
+            --allow-net `
+            --allow-env `
+            --allow-run `
+            --target x86_64-pc-windows-msvc `
+            --output dist/distil.exe `
+            src/main.ts
+      - name: Smoke-test executable
+        shell: pwsh
+        run: |
+          $version = (Get-Content "deno.json" -Raw | ConvertFrom-Json).version
+          $actual = & "dist/distil.exe" --version
+          if ($actual -ne "distil $version") {
+            throw "Compiled version '$actual' does not match deno.json version '$version'"
+          }
+          & "dist/distil.exe" --help
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          $version = (Get-Content "deno.json" -Raw | ConvertFrom-Json).version
+          $name = "distil-v$version-windows-x86_64"
+          $package = Join-Path "dist/release" $name
+          New-Item -ItemType Directory -Force $package | Out-Null
+          Copy-Item "dist/distil.exe" $package
+          Copy-Item "config.toml" $package
+          Copy-Item "README.md" $package
+          Copy-Item "LICENSE" $package
+          Compress-Archive `
+            -Path "$package/*" `
+            -DestinationPath (Join-Path "dist" "$name.zip") `
+            -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distil-windows-x86_64
+          path: dist/distil-v*-windows-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          version="$(jq -r '.version' deno.json)"
+          expected="v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
+            echo "::error::Release tag $GITHUB_REF_NAME must match deno.json version $expected"
+            exit 1
+          fi
+
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: distil-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd release-assets
+          prefix="distil-${GITHUB_REF_NAME}"
+          sha256sum \
+            "${prefix}-linux-x86_64.tar.gz" \
+            "${prefix}-macos-aarch64.tar.gz" \
+            "${prefix}-windows-x86_64.zip" \
+            > SHA256SUMS
+
+      - name: Attest release archives and checksums
+        uses: actions/attest@v4
+        with:
+          subject-path: release-assets/*
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prefix="distil-${GITHUB_REF_NAME}"
+          expected_assets="$(printf '%s\n' \
+            SHA256SUMS \
+            "${prefix}-linux-x86_64.tar.gz" \
+            "${prefix}-macos-aarch64.tar.gz" \
+            "${prefix}-windows-x86_64.zip" | sort)"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            actual_assets="$(gh release view "$GITHUB_REF_NAME" \
+              --json assets --jq '.assets[].name' | sort)"
+            if [[ "$actual_assets" != "$expected_assets" ]]; then
+              echo "::error::Release $GITHUB_REF_NAME already exists with unexpected assets; refusing to overwrite it"
+              exit 1
+            fi
+            echo "Release $GITHUB_REF_NAME already has the expected assets."
+            exit 0
+          fi
+
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            "release-assets/${prefix}-linux-x86_64.tar.gz" \
+            "release-assets/${prefix}-macos-aarch64.tar.gz" \
+            "release-assets/${prefix}-windows-x86_64.zip" \
+            release-assets/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --fail-on-no-commits \
+            --title "Distil $GITHUB_REF_NAME" \
+            "${prerelease[@]}"
