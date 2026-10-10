@@ -56,7 +56,7 @@ Deno.test("documents all supported commands", () => {
   assertMatch(help, /--review-policy/);
 });
 
-Deno.test("keeps the CLI and package versions in sync", async () => {
+Deno.test("reads the CLI version from the package manifest", async () => {
   const manifest = JSON.parse(
     await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
   );

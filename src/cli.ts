@@ -14,8 +14,9 @@ import {
 import { saveDigest } from "./storage.ts";
 import type { ProgressUpdate } from "./types.ts";
 import { DistilWebApp, startServer } from "./web.ts";
+import denoConfig from "../deno.json" with { type: "json" };
 
-export const VERSION = "0.3.0";
+export const VERSION = denoConfig.version;
 
 export interface CliOptions {
   command?: "run" | "preview" | "serve" | "setup";
