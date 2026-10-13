@@ -42,6 +42,14 @@ enables generation. It then streams generation progress and stores collision-saf
 files under `history/`. An indeterminate progress bar remains visible while the model is
 working because compatible LLM APIs do not report a reliable completion percentage.
 
+Open **Settings** in the web UI to configure Distil without editing TOML. The guided form
+covers the research focus, local or compatible AI provider, trusted sources, output
+preferences, and optional Strands screening. Distil validates the complete form, writes
+the selected `--config` file atomically, and uses the saved settings immediately. If that
+file is missing or invalid, `distil serve` still opens the UI in setup mode so it can be
+repaired. Hosted API keys remain outside the file: enter only the environment-variable
+name in Settings and set its secret value before starting Distil.
+
 ## LLM configuration
 
 All providers share one small OpenAI-compatible transport. Distil sends
@@ -223,6 +231,5 @@ attestations, and publishes the archives without overwriting an existing release
 The check task formats, lints, type-checks, and runs the full deterministic test suite.
 Tests mock network, LLM, and Ollama boundaries; they do not spend API credits or download
 models.
-
 The web server binds to loopback by default and has no authentication. Do not expose it
 publicly without adding an authentication and authorization design.
