@@ -1,4 +1,5 @@
 import { collectContent } from "./content.ts";
+import { editableConfig, normalizeEditableConfig, saveConfig } from "./config.ts";
 import { streamDistil } from "./prompts.ts";
 import {
   ContentSelector,
@@ -15,9 +16,10 @@ import type {
   CollectionResult,
   Config,
   ContentItem,
+  LlmConfig,
   ProgressUpdate,
 } from "./types.ts";
-import { historyPage, homePage, notFoundPage, viewPage } from "./web_ui.ts";
+import { historyPage, homePage, notFoundPage, settingsPage, viewPage } from "./web_ui.ts";
 
 export function distilLogoUrl(
   moduleUrl: string | URL,
@@ -35,14 +37,20 @@ const DISTIL_LOGO = Deno.readFileSync(
 
 export interface WebDependencies {
   config: Config;
-  client: ChatClient;
+  client?: ChatClient;
+  clientFactory?: (config: LlmConfig) => ChatClient;
+  configPath?: string;
+  configurationIssue?: string;
+  persistConfig?: (config: Config) => Promise<void>;
+  getEnv?: (name: string) => string | undefined;
   historyDirectory?: string;
   collect?: (
     days: number,
     options: WebCollectionOptions,
   ) => Promise<CollectionResult>;
   selector?: SelectionPipeline;
-  ensureProvider?: () => Promise<void>;
+  selectorFactory?: (config: Config) => SelectionPipeline;
+  ensureProvider?: (config: LlmConfig) => Promise<void>;
   now?: () => Date;
 }
 
@@ -90,25 +98,39 @@ type SelectionResolution =
   | { selected: boolean; all: false; fingerprint: string };
 
 export class DistilWebApp {
-  readonly #config: Config;
-  readonly #client: ChatClient;
+  #config: Config;
+  readonly #clientFactory: (config: LlmConfig) => ChatClient;
+  #configured: boolean;
+  #configurationIssue?: string;
+  readonly #persistConfig: (config: Config) => Promise<void>;
+  readonly #getEnv: (name: string) => string | undefined;
   readonly #historyDirectory: string;
   readonly #collect: (
     days: number,
     options: WebCollectionOptions,
   ) => Promise<CollectionResult>;
-  readonly #selector: SelectionPipeline;
-  readonly #ensureProvider: () => Promise<void>;
+  #selector: SelectionPipeline;
+  readonly #selectorFactory: (config: Config) => SelectionPipeline;
+  readonly #ensureProvider: (config: LlmConfig) => Promise<void>;
   readonly #now: () => Date;
   #cachedItems: ContentItem[] = [];
   #cachedSelection?: SelectionResult;
   #fetchJob?: FetchJob;
   #nextFetchJobId = 1;
   #generationInProgress = false;
+  #configurationSaveInProgress = false;
 
   constructor(dependencies: WebDependencies) {
     this.#config = dependencies.config;
-    this.#client = dependencies.client;
+    this.#configured = dependencies.configurationIssue === undefined;
+    this.#configurationIssue = dependencies.configurationIssue;
+    if (!dependencies.client && !dependencies.clientFactory) {
+      throw new Error("A web chat client or client factory is required");
+    }
+    this.#clientFactory = dependencies.clientFactory ?? (() => dependencies.client!);
+    this.#persistConfig = dependencies.persistConfig ??
+      ((config) => saveConfig(dependencies.configPath ?? "config.toml", config));
+    this.#getEnv = dependencies.getEnv ?? ((name) => Deno.env.get(name));
     this.#historyDirectory = dependencies.historyDirectory ?? "history";
     this.#collect = dependencies.collect ??
       ((days, options) =>
@@ -117,8 +139,11 @@ export class DistilWebApp {
           signal: options.signal,
           onProgress: options.onProgress,
         }));
-    this.#selector = dependencies.selector ??
-      new ContentSelector(this.#config.decision, this.#config.domain.focus);
+    this.#selectorFactory = dependencies.selectorFactory ??
+      (dependencies.selector
+        ? () => dependencies.selector!
+        : (config) => new ContentSelector(config.decision, config.domain.focus));
+    this.#selector = this.#selectorFactory(this.#config);
     this.#ensureProvider = dependencies.ensureProvider ?? (() => Promise.resolve());
     this.#now = dependencies.now ?? (() => new Date());
   }
@@ -127,15 +152,27 @@ export class DistilWebApp {
     const url = new URL(request.url);
     try {
       if (
-        (request.method === "POST" || request.method === "PATCH" ||
-          request.method === "DELETE") &&
+        (request.method === "POST" || request.method === "PUT" ||
+          request.method === "PATCH" || request.method === "DELETE") &&
         request.headers.has("origin") &&
         request.headers.get("origin") !== url.origin
       ) {
         return json({ error: "Cross-origin requests are not allowed" }, 403);
       }
       if (request.method === "GET" && url.pathname === "/") {
-        return html(homePage());
+        return html(homePage({
+          configured: this.#configured,
+          issue: this.#configurationIssue,
+        }));
+      }
+      if (request.method === "GET" && url.pathname === "/settings") {
+        return html(settingsPage());
+      }
+      if (request.method === "GET" && url.pathname === "/api/config") {
+        return json(this.#configurationSnapshot());
+      }
+      if (request.method === "PUT" && url.pathname === "/api/config") {
+        return await this.#handleConfigUpdate(request);
       }
       if (request.method === "GET" && url.pathname === "/assets/distil-logo.png") {
         return new Response(DISTIL_LOGO, {
@@ -180,7 +217,73 @@ export class DistilWebApp {
     }
   };
 
+  #configurationSnapshot(): Record<string, unknown> {
+    const apiKeyEnv = this.#config.llm.apiKeyEnv;
+    let apiKeyAvailable = false;
+    if (apiKeyEnv) {
+      try {
+        apiKeyAvailable = Boolean(this.#getEnv(apiKeyEnv));
+      } catch {
+        // The configuration remains editable when environment access is unavailable.
+      }
+    }
+    return {
+      configured: this.#configured,
+      issue: this.#configurationIssue,
+      apiKeyAvailable,
+      config: editableConfig(this.#config),
+    };
+  }
+
+  async #handleConfigUpdate(request: Request): Promise<Response> {
+    if (this.#configurationSaveInProgress) {
+      return json({ error: "Settings are already being saved" }, 409);
+    }
+    if (this.#fetchJob?.status === "running" || this.#generationInProgress) {
+      return json({
+        error:
+          "Wait for the current fetch or generation to finish before saving settings",
+      }, 409);
+    }
+    this.#configurationSaveInProgress = true;
+    try {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Request body must contain valid JSON" }, 400);
+      }
+      let config: Config;
+      try {
+        const value = body && typeof body === "object" && !Array.isArray(body) &&
+            "config" in body
+          ? (body as { config: unknown }).config
+          : body;
+        config = normalizeEditableConfig(value);
+      } catch (error) {
+        return json({ error: message(error) }, 400);
+      }
+      const selector = this.#selectorFactory(config);
+      try {
+        await this.#persistConfig(config);
+      } catch (error) {
+        return json({ error: `Could not save settings: ${message(error)}` }, 500);
+      }
+      this.#config = config;
+      this.#selector = selector;
+      this.#configured = true;
+      this.#configurationIssue = undefined;
+      this.#resetFetch();
+      return json(this.#configurationSnapshot());
+    } finally {
+      this.#configurationSaveInProgress = false;
+    }
+  }
+
   async #handleFetch(request: Request): Promise<Response> {
+    if (!this.#configured) {
+      return json({ error: "Complete setup in Settings before fetching content" }, 409);
+    }
     if (this.#fetchJob?.status === "running") {
       return json({
         ...this.#fetchSnapshot(),
@@ -396,9 +499,10 @@ export class DistilWebApp {
       );
     };
     try {
-      await this.#ensureProvider();
+      await this.#ensureProvider(this.#config.llm);
+      const client = this.#clientFactory(this.#config.llm);
       for await (
-        const chunk of streamDistil(this.#client, items, {
+        const chunk of streamDistil(client, items, {
           domain: this.#config.domain.focus,
           readingTimeMinutes: this.#config.output.readingTimeMinutes,
           signal,

@@ -1,4 +1,5 @@
 import type { ChatClient, ChatMessage, Config, ContentItem } from "../src/types.ts";
+import { editableConfig, setupConfig } from "../src/config.ts";
 import { distilLogoUrl, DistilWebApp } from "../src/web.ts";
 import type { SelectionPipeline, SelectionResult } from "../src/selection.ts";
 import { assertEquals, assertMatch } from "./assert.ts";
@@ -179,6 +180,10 @@ Deno.test("web fetch survives navigation and can be interrupted and reset", asyn
   assertEquals(duplicate.status, 409);
   assertEquals((await duplicate.json()).status, "running");
 
+  const settingsDuringFetch = await putConfig(app, editableConfig(testConfig()));
+  assertEquals(settingsDuringFetch.status, 409);
+  assertMatch((await settingsDuringFetch.json()).error, /current fetch/);
+
   assertEquals((await app.handler(new Request("http://localhost/history"))).status, 200);
   assertEquals((await app.handler(new Request("http://localhost/"))).status, 200);
   const resumed = await app.handler(new Request("http://localhost/api/fetch/status"));
@@ -338,6 +343,99 @@ Deno.test("web validates days and confines history paths", async () => {
     }),
   );
   assertEquals(crossOriginReview.status, 403);
+
+  const crossOriginSettings = await app.handler(
+    new Request("http://localhost/api/config", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://attacker.example",
+      },
+      body: JSON.stringify({ config: editableConfig(testConfig()) }),
+    }),
+  );
+  assertEquals(crossOriginSettings.status, 403);
+});
+
+Deno.test("web settings recover first-run setup and apply a validated configuration", async () => {
+  const historyDirectory = await Deno.makeTempDir();
+  try {
+    let saved: Config | undefined;
+    let generatedModel = "";
+    const app = new DistilWebApp({
+      config: setupConfig(),
+      configurationIssue: "Config file not found: config.toml",
+      clientFactory: (llm) => {
+        generatedModel = llm.model;
+        return new WebClient();
+      },
+      selector: new WebSelector(),
+      collect: () => Promise.resolve({ items: [testItem()], health: {} }),
+      historyDirectory,
+      persistConfig: (config) => {
+        saved = config;
+        return Promise.resolve();
+      },
+    });
+
+    const before = await app.handler(new Request("http://localhost/"));
+    assertMatch(await before.text(), /Finish setting up Distil/);
+    const blocked = await app.handler(
+      new Request("http://localhost/api/fetch", { method: "POST" }),
+    );
+    assertEquals(blocked.status, 409);
+
+    const settings = await app.handler(new Request("http://localhost/settings"));
+    const settingsHtml = await settings.text();
+    assertEquals(settings.status, 200);
+    assertMatch(settingsHtml, /What do you want to follow\?/);
+    assertMatch(settingsHtml, /Ollama on this computer/);
+    assertMatch(settingsHtml, /Add another source/);
+    assertMatch(settingsHtml, /The key itself is never saved/);
+    assertMatch(
+      settingsHtml,
+      /\.switch-row input \{ flex:0 0 1rem; width:1rem; height:1rem; margin:\.25rem 0 0;\s+padding:0;/,
+    );
+    const settingsScript = settingsHtml.match(/<script>([\s\S]+)<\/script>/)?.[1];
+    if (!settingsScript) throw new Error("settings page script was missing");
+    new Function(settingsScript);
+
+    const initial = await (await app.handler(
+      new Request("http://localhost/api/config"),
+    )).json();
+    assertEquals(initial.configured, false);
+    assertEquals(initial.config.feeds, []);
+
+    const invalid = editableConfig(testConfig());
+    invalid.feeds = [];
+    const invalidResponse = await putConfig(app, invalid);
+    assertEquals(invalidResponse.status, 400);
+    assertMatch((await invalidResponse.json()).error, /At least one/);
+
+    const valid = editableConfig(testConfig());
+    valid.llm.model = "configured-model";
+    valid.domain.focus = "accessible research tools";
+    valid.feeds[0].name = "Research updates";
+    const updated = await putConfig(app, valid);
+    assertEquals(updated.status, 200);
+    const updatedBody = await updated.json();
+    assertEquals(updatedBody.configured, true);
+    assertEquals(updatedBody.config.domain.focus, "accessible research tools");
+    assertEquals(saved?.domain.focus, "accessible research tools");
+
+    const after = await app.handler(new Request("http://localhost/"));
+    assertEquals((await after.text()).includes("Finish setting up Distil"), false);
+
+    await app.handler(new Request("http://localhost/api/fetch", { method: "POST" }));
+    await completedFetch(app);
+    const generated = await app.handler(
+      new Request("http://localhost/api/generate", { method: "POST" }),
+    );
+    await generated.text();
+    assertEquals(generatedModel, "configured-model");
+  } finally {
+    await Deno.remove(historyDirectory, { recursive: true });
+  }
 });
 
 Deno.test("home page includes security headers and accessible controls", async () => {
@@ -407,6 +505,16 @@ function resolveSelection(
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+    }),
+  );
+}
+
+function putConfig(app: DistilWebApp, config: unknown): Promise<Response> {
+  return app.handler(
+    new Request("http://localhost/api/config", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ config }),
     }),
   );
 }

@@ -10,6 +10,40 @@ const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_OPENAI_URL = "https://api.mistral.ai/v1";
 const DEFAULT_DECISION_URL = "http://127.0.0.1:8000";
 
+export interface EditableConfig {
+  llm: {
+    provider: Provider;
+    model: string;
+    baseUrl: string;
+    manageLocal: boolean;
+    apiKeyEnv: string;
+    timeoutSeconds: number;
+    retries: number;
+    temperature?: number;
+  };
+  decision: {
+    enabled: boolean;
+    baseUrl: string;
+    confidenceThreshold: number;
+    timeoutSeconds: number;
+  };
+  output: {
+    directory: string;
+    readingTimeMinutes: number;
+  };
+  domain: {
+    focus: string;
+  };
+  feeds: Array<{
+    url: string;
+    name: string;
+    type: "rss" | "youtube";
+    maxItems?: number;
+    keywords: string[];
+    pattern: string;
+  }>;
+}
+
 export async function loadConfig(path = "config.toml"): Promise<Config> {
   let text: string;
   try {
@@ -21,6 +55,197 @@ export async function loadConfig(path = "config.toml"): Promise<Config> {
     throw error;
   }
   return normalizeConfig(parseToml(text));
+}
+
+export async function loadConfigForWeb(
+  path = "config.toml",
+): Promise<{ config: Config; issue?: string }> {
+  try {
+    return { config: await loadConfig(path) };
+  } catch (error) {
+    return { config: setupConfig(), issue: message(error) };
+  }
+}
+
+export function setupConfig(): Config {
+  return {
+    llm: {
+      provider: "ollama",
+      model: "qwen2.5:3b",
+      baseUrl: DEFAULT_OLLAMA_URL,
+      manageLocal: true,
+      timeoutMs: 900_000,
+      retries: 2,
+    },
+    decision: {
+      enabled: false,
+      baseUrl: DEFAULT_DECISION_URL,
+      confidenceThreshold: 0.9,
+      timeoutMs: 10_000,
+    },
+    output: { directory: "~/distils", readingTimeMinutes: 5 },
+    domain: { focus: "" },
+    feeds: [],
+  };
+}
+
+export function editableConfig(config: Config): EditableConfig {
+  return {
+    llm: {
+      provider: config.llm.provider,
+      model: config.llm.model,
+      baseUrl: config.llm.baseUrl,
+      manageLocal: config.llm.manageLocal,
+      apiKeyEnv: config.llm.apiKeyEnv ?? "",
+      timeoutSeconds: config.llm.timeoutMs / 1_000,
+      retries: config.llm.retries,
+      temperature: config.llm.temperature,
+    },
+    decision: {
+      enabled: config.decision.enabled,
+      baseUrl: config.decision.baseUrl,
+      confidenceThreshold: config.decision.confidenceThreshold,
+      timeoutSeconds: config.decision.timeoutMs / 1_000,
+    },
+    output: {
+      directory: config.output.directory,
+      readingTimeMinutes: config.output.readingTimeMinutes,
+    },
+    domain: { focus: config.domain.focus },
+    feeds: config.feeds.map((feed) => ({
+      url: feed.url,
+      name: feed.name,
+      type: feed.type,
+      maxItems: feed.maxItems,
+      keywords: feed.keywords ?? [],
+      pattern: feed.pattern ?? "",
+    })),
+  };
+}
+
+export function normalizeEditableConfig(value: unknown): Config {
+  const root = inputTable(value, "configuration");
+  const llm = inputTable(root.llm, "llm");
+  const decision = inputTable(root.decision, "decision");
+  const output = inputTable(root.output, "output");
+  const domain = inputTable(root.domain, "domain");
+  if (!Array.isArray(root.feeds)) throw new Error("feeds must be a list");
+
+  const raw: TomlTable = {
+    llm: {
+      provider: inputScalar(llm.provider, "llm.provider"),
+      model: inputScalar(llm.model, "llm.model"),
+      base_url: inputScalar(llm.baseUrl, "llm.baseUrl"),
+      manage_local: inputScalar(llm.manageLocal, "llm.manageLocal"),
+      api_key_env: inputScalar(llm.apiKeyEnv, "llm.apiKeyEnv"),
+      timeout_seconds: inputScalar(llm.timeoutSeconds, "llm.timeoutSeconds"),
+      retries: inputScalar(llm.retries, "llm.retries"),
+      ...(llm.temperature === undefined
+        ? {}
+        : { temperature: inputScalar(llm.temperature, "llm.temperature") }),
+    },
+    decision: {
+      enabled: inputScalar(decision.enabled, "decision.enabled"),
+      base_url: inputScalar(decision.baseUrl, "decision.baseUrl"),
+      confidence_threshold: inputScalar(
+        decision.confidenceThreshold,
+        "decision.confidenceThreshold",
+      ),
+      timeout_seconds: inputScalar(
+        decision.timeoutSeconds,
+        "decision.timeoutSeconds",
+      ),
+    },
+    output: {
+      directory: inputScalar(output.directory, "output.directory"),
+      reading_time_minutes: inputScalar(
+        output.readingTimeMinutes,
+        "output.readingTimeMinutes",
+      ),
+    },
+    domain: { focus: inputScalar(domain.focus, "domain.focus") },
+    feeds: root.feeds.map((value, index) => {
+      const feed = inputTable(value, `feeds[${index}]`);
+      return {
+        url: inputScalar(feed.url, `feeds[${index}].url`),
+        name: inputScalar(feed.name, `feeds[${index}].name`),
+        type: inputScalar(feed.type, `feeds[${index}].type`),
+        ...(feed.maxItems === undefined
+          ? {}
+          : { max_items: inputScalar(feed.maxItems, `feeds[${index}].maxItems`) }),
+        keywords: inputStringArray(feed.keywords, `feeds[${index}].keywords`),
+        pattern: inputScalar(feed.pattern, `feeds[${index}].pattern`),
+      };
+    }),
+  };
+  const config = normalizeConfig(raw);
+  if (!config.domain.focus) throw new Error("domain.focus must not be empty");
+  return config;
+}
+
+export function formatConfig(config: Config): string {
+  const lines = [
+    "[llm]",
+    `provider = ${tomlString(config.llm.provider)}`,
+    `model = ${tomlString(config.llm.model)}`,
+    `base_url = ${tomlString(config.llm.baseUrl)}`,
+    `manage_local = ${config.llm.manageLocal}`,
+    `timeout_seconds = ${numberText(config.llm.timeoutMs / 1_000)}`,
+    `retries = ${config.llm.retries}`,
+  ];
+  if (config.llm.apiKeyEnv !== undefined) {
+    lines.push(`api_key_env = ${tomlString(config.llm.apiKeyEnv)}`);
+  }
+  if (config.llm.temperature !== undefined) {
+    lines.push(`temperature = ${numberText(config.llm.temperature)}`);
+  }
+  lines.push(
+    "",
+    "[decision]",
+    `enabled = ${config.decision.enabled}`,
+    `base_url = ${tomlString(config.decision.baseUrl)}`,
+    `confidence_threshold = ${numberText(config.decision.confidenceThreshold)}`,
+    `timeout_seconds = ${numberText(config.decision.timeoutMs / 1_000)}`,
+    "",
+    "[output]",
+    `directory = ${tomlString(config.output.directory)}`,
+    `reading_time_minutes = ${config.output.readingTimeMinutes}`,
+    "",
+    "[domain]",
+    `focus = ${tomlString(config.domain.focus)}`,
+  );
+  for (const feed of config.feeds) {
+    lines.push(
+      "",
+      "[[feeds]]",
+      `url = ${tomlString(feed.url)}`,
+      `name = ${tomlString(feed.name)}`,
+      `type = ${tomlString(feed.type)}`,
+    );
+    if (feed.maxItems !== undefined) lines.push(`max_items = ${feed.maxItems}`);
+    if (feed.keywords !== undefined && feed.keywords.length > 0) {
+      lines.push(`keywords = [${feed.keywords.map(tomlString).join(", ")}]`);
+    }
+    if (feed.pattern !== undefined) lines.push(`pattern = ${tomlString(feed.pattern)}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export async function saveConfig(path: string, config: Config): Promise<void> {
+  if (!path.trim()) throw new Error("Configuration path must not be empty");
+  const content = formatConfig(config);
+  normalizeConfig(parseToml(content));
+  const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`;
+  try {
+    await Deno.writeTextFile(temporaryPath, content, { createNew: true, mode: 0o600 });
+    await Deno.rename(temporaryPath, path);
+  } finally {
+    try {
+      await Deno.remove(temporaryPath);
+    } catch {
+      // A failed write or rename remains the primary error; cleanup is best effort.
+    }
+  }
 }
 
 export function parseToml(source: string): TomlTable {
@@ -472,4 +697,41 @@ function trimTrailingSlash(value: string): string {
 
 function tomlError(line: number, message: string): Error {
   return new Error(`Invalid TOML at line ${line}: ${message}`);
+}
+
+function inputTable(value: unknown, name: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${name} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function inputScalar(value: unknown, name: string): TomlValue {
+  if (
+    typeof value !== "string" && typeof value !== "number" &&
+    typeof value !== "boolean"
+  ) {
+    throw new Error(`${name} has an invalid value`);
+  }
+  return value;
+}
+
+function inputStringArray(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${name} must be a list of text values`);
+  }
+  return value as string[];
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function numberText(value: number): string {
+  if (!Number.isFinite(value)) throw new Error("Configuration numbers must be finite");
+  return String(value);
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

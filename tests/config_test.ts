@@ -1,5 +1,14 @@
-import { normalizeConfig, parseToml } from "../src/config.ts";
-import { assertEquals, assertRejects } from "./assert.ts";
+import {
+  editableConfig,
+  formatConfig,
+  loadConfig,
+  loadConfigForWeb,
+  normalizeConfig,
+  normalizeEditableConfig,
+  parseToml,
+  saveConfig,
+} from "../src/config.ts";
+import { assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
 Deno.test("parses and normalizes the existing TOML shape", () => {
   const raw = parseToml(`
@@ -145,4 +154,48 @@ Deno.test("rejects local Ollama management for a remote URL", async () => {
       `)),
     /requires a loopback Ollama endpoint/,
   );
+});
+
+Deno.test("round-trips GUI settings through canonical TOML", async () => {
+  const config = normalizeConfig(parseToml(`
+    [llm]
+    provider = "openai"
+    model = "mistral-small-latest"
+    base_url = "https://api.mistral.ai/v1"
+    api_key_env = "MISTRAL_API_KEY"
+    temperature = 0.2
+
+    [domain]
+    focus = "drug discovery"
+
+    [[feeds]]
+    url = "https://example.com/feed.xml"
+    name = "Example \\\"Research\\\""
+    keywords = ["drug", "protein"]
+  `));
+  const edited = normalizeEditableConfig(editableConfig(config));
+  assertEquals(edited, config);
+  assertEquals(normalizeConfig(parseToml(formatConfig(config))), config);
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/config.toml`;
+  try {
+    await Deno.writeTextFile(path, "old content");
+    await saveConfig(path, config);
+    assertEquals(await loadConfig(path), config);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("web configuration falls back to an editable setup when the file is missing", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    const result = await loadConfigForWeb(`${directory}/missing.toml`);
+    assertMatch(result.issue ?? "", /Config file not found/);
+    assertEquals(result.config.domain.focus, "");
+    assertEquals(result.config.feeds, []);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 });

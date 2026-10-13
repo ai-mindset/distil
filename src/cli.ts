@@ -1,5 +1,5 @@
 import { collectContent } from "./content.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, loadConfigForWeb } from "./config.ts";
 import { StrandsDecisionClient } from "./decision.ts";
 import { OpenAICompatibleClient } from "./llm.ts";
 import { ensureOllamaReady } from "./ollama.ts";
@@ -128,7 +128,10 @@ export async function main(args = Deno.args): Promise<number> {
       return 0;
     }
 
-    const config = await loadConfig(options.config);
+    const webConfiguration = options.command === "serve"
+      ? await loadConfigForWeb(options.config)
+      : undefined;
+    const config = webConfiguration?.config ?? await loadConfig(options.config);
     if (options.command === "setup") {
       let localService = false;
       if (config.llm.provider === "ollama") {
@@ -204,11 +207,13 @@ export async function main(args = Deno.args): Promise<number> {
       return 0;
     }
 
-    const client = new OpenAICompatibleClient(config.llm);
     const app = new DistilWebApp({
       config,
-      client,
-      ensureProvider: () => ensureOllamaReady(config.llm),
+      clientFactory: (llm) => new OpenAICompatibleClient(llm),
+      configPath: options.config,
+      configurationIssue: webConfiguration?.issue,
+      ensureProvider: (llm) =>
+        llm.provider === "ollama" ? ensureOllamaReady(llm) : Promise.resolve(),
     });
     const server = startServer(app, {
       hostname: options.hostname,
