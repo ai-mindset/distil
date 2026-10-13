@@ -230,6 +230,5 @@ attestations, and publishes the archives without overwriting an existing release
 
 The check task formats, lints, type-checks, and runs the full deterministic test suite.
 Tests mock network, LLM, and Ollama boundaries; they do not spend API credits or download
-models.
-The web server binds to loopback by default and has no authentication. Do not expose it
-publicly without adding an authentication and authorization design.
+models. The web server binds to loopback by default and has no authentication. Do not
+expose it publicly without adding an authentication and authorization design.
