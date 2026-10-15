@@ -12,6 +12,18 @@ The application is written in TypeScript for Bun. It has no third-party runtime 
 configuration, feed parsing, CLI handling, web serving, streaming, and tests all use
 repository code, Web APIs, or Bun and Node-compatible built-ins.
 
+## See Distil in action
+
+Collect recent items, review every relevance decision, then generate a focused Markdown
+digest. Include and Exclude choices remain reversible until generation starts.
+
+[![Distil's three-step workflow with collection activity and source-level review summaries](assets/screenshots/workflow.png)](assets/screenshots/workflow.png)
+
+<p align="center">
+  <a href="assets/screenshots/generated-digest.png"><img src="assets/screenshots/generated-digest.png" alt="Distil's generation step showing a saved Markdown research digest" width="49%"></a>
+  <a href="assets/screenshots/key-takeaways.png"><img src="assets/screenshots/key-takeaways.png" alt="The key takeaways section of a Distil research digest" width="49%"></a>
+</p>
+
 ## Requirements
 
 - [Bun 1.4.3 or newer](https://bun.sh/docs/installation)
@@ -139,8 +151,13 @@ Then enable its loopback endpoint:
     [decision]
     enabled = true
     base_url = "http://127.0.0.1:8000"
-    confidence_threshold = 0.9
+    confidence_threshold = 0.85
     timeout_seconds = 10
+
+The default threshold of `0.85` accepts common high-confidence decisions while leaving
+less certain items for review. Raise it toward `1` for stricter manual oversight or lower
+it cautiously to automate more decisions. Existing explicit configuration values are not
+changed automatically.
 
 Distil accepts a Strands include or exclude classification only when it meets the
 configured confidence threshold. The preview labels those results **Include** or
@@ -161,8 +178,9 @@ Preview selection without calling the generative LLM:
     bun run distil preview --days 7
 
 The web UI offers Include and Exclude controls beside every unresolved item, plus explicit
-bulk controls. CLI `run` stops when review is required; after inspecting `preview`, opt in
-to a deterministic bulk decision when appropriate:
+bulk controls. Every settled item can be changed from Include to Exclude or back again
+until generation starts. CLI `run` stops when review is required; after inspecting
+`preview`, opt in to a deterministic bulk decision when appropriate:
 
     bun run distil run --review-policy=include
     bun run distil run --review-policy=exclude

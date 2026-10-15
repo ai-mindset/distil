@@ -11,6 +11,7 @@ type TomlValue = string | number | boolean | TomlValue[] | TomlTable;
 const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_OPENAI_URL = "https://api.mistral.ai/v1";
 const DEFAULT_DECISION_URL = "http://127.0.0.1:8000";
+const DEFAULT_DECISION_CONFIDENCE = 0.85;
 
 export interface EditableConfig {
   llm: {
@@ -82,7 +83,7 @@ export function setupConfig(): Config {
     decision: {
       enabled: false,
       baseUrl: DEFAULT_DECISION_URL,
-      confidenceThreshold: 0.9,
+      confidenceThreshold: DEFAULT_DECISION_CONFIDENCE,
       timeoutMs: 10_000,
     },
     output: { directory: "~/distils", readingTimeMinutes: 5 },
@@ -355,7 +356,7 @@ export function normalizeConfig(raw: TomlTable): Config {
     baseUrl: decisionBaseUrl,
     confidenceThreshold: boundedNumber(
       decisionRaw.confidence_threshold,
-      0.9,
+      DEFAULT_DECISION_CONFIDENCE,
       0,
       1,
       "decision.confidence_threshold",

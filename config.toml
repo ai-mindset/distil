@@ -9,7 +9,7 @@ retries = 2
 [decision]
 enabled = true
 base_url = "http://127.0.0.1:8000"
-confidence_threshold = 0.9
+confidence_threshold = 0.85
 timeout_seconds = 10
 
 [output]

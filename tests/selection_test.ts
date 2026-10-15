@@ -6,7 +6,7 @@ import {
   FileSeenStore,
   itemFingerprint,
   resolveAllPending,
-  resolvePendingSelection,
+  resolveSelection,
   type SeenStore,
   unresolvedSelections,
 } from "../src/selection.ts";
@@ -81,12 +81,12 @@ test("selection skips seen items and trusts only confident Strands choices", asy
   assertEquals(progress.at(-1)?.completed, 4);
   assertMatch(progress.at(-1)?.message ?? "", /top choice was exclude/);
 
-  await assertRejects(() => selector.markReviewed(result), /1 unresolved item/);
-  const resolved = resolvePendingSelection(
-    result,
-    result.items[3].fingerprint,
-    "include",
+  await assertRejects(
+    () => resolveSelection(result, result.items[0].fingerprint, "include"),
+    /Include seen/,
   );
+  await assertRejects(() => selector.markReviewed(result), /1 unresolved item/);
+  const resolved = resolveSelection(result, result.items[3].fingerprint, "include");
   assertEquals(resolved.items[3].kind, "manual");
   assertEquals(resolved.items[3].selected, true);
   assertMatch(resolved.items[3].reason, /^Included by user review\./);
@@ -151,7 +151,7 @@ test("selection requires review when the local decision service is unavailable",
   assertMatch(resolved.items[0].reason, /^Excluded by explicit bulk review\./);
 });
 
-test("selection resolution rejects unknown and final decisions", async () => {
+test("selection decisions can be reversed while preserving their evidence", async () => {
   const decisions = new FakeDecisionClient();
   decisions.verdicts = [{ choice: "include", confidence: 0.95 }];
   const selector = new ContentSelector(config, "research", {
@@ -160,13 +160,21 @@ test("selection resolution rejects unknown and final decisions", async () => {
   });
   const result = await selector.select([item(1)]);
 
-  await assertRejects(
-    () => resolvePendingSelection(result, "missing", "include"),
-    /Unknown selection fingerprint/,
+  await assertRejects(() => resolveSelection(result, "missing", "include"), /Unknown/);
+
+  const excluded = resolveSelection(result, result.items[0].fingerprint, "exclude");
+  assertEquals(excluded.items[0].kind, "manual");
+  assertEquals(excluded.items[0].selected, false);
+  assertEquals(
+    excluded.items[0].reason,
+    "Excluded by user review. Strands chose include with 95% confidence in its relevance classification",
   );
-  await assertRejects(
-    () => resolvePendingSelection(result, result.items[0].fingerprint, "exclude"),
-    /does not require review/,
+
+  const included = resolveSelection(excluded, result.items[0].fingerprint, "include");
+  assertEquals(included.items[0].selected, true);
+  assertEquals(
+    included.items[0].reason,
+    "Included by user review. Strands chose include with 95% confidence in its relevance classification",
   );
 });
 
