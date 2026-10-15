@@ -207,14 +207,18 @@ export function unresolvedSelections(result: SelectionResult): ItemSelection[] {
   return result.items.filter(isPendingSelection);
 }
 
-export function resolvePendingSelection(
+export function resolveSelection(
   result: SelectionResult,
   fingerprint: string,
   policy: ReviewPolicy,
 ): SelectionResult {
   const target = result.items.find((selection) => selection.fingerprint === fingerprint);
   if (!target) throw new Error("Unknown selection fingerprint");
-  if (!isPendingSelection(target)) throw new Error("Selection does not require review");
+  if (target.kind === "seen") {
+    throw new Error(
+      "Seen items must be recollected with Include seen before changing them",
+    );
+  }
   return resolvedResult(
     result,
     result.items.map((selection) =>
@@ -376,11 +380,18 @@ function manualResolution(
   source: "user review" | "explicit bulk review",
 ): ItemSelection {
   const included = policy === "include";
+  const evidence =
+    selection.kind === "manual"
+      ? selection.reason.replace(
+          /^(?:Included|Excluded) by (?:user review|explicit bulk review)\. /,
+          "",
+        )
+      : selection.reason;
   return {
     ...selection,
     selected: included,
     kind: "manual",
-    reason: `${included ? "Included" : "Excluded"} by ${source}. ${selection.reason}`,
+    reason: `${included ? "Included" : "Excluded"} by ${source}. ${evidence}`,
   };
 }
 

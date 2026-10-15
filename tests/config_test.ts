@@ -41,6 +41,7 @@ test("parses and normalizes the existing TOML shape", () => {
   assertEquals(config.llm.retries, 3);
   assertEquals(config.decision.enabled, false);
   assertEquals(config.decision.baseUrl, "http://127.0.0.1:8000");
+  assertEquals(config.decision.confidenceThreshold, 0.85);
   assertEquals(config.output.readingTimeMinutes, 7);
   assertEquals(config.feeds[0].keywords, ["drug", "protein"]);
 });

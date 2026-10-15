@@ -44,7 +44,7 @@ export function homePage(
       '<ol id="fetch-log" class="progress-log" aria-label="Collection activity"></ol>',
       "</section>",
       '<section id="review-panel" class="card workflow-panel" aria-labelledby="review-heading">',
-      '<div class="card-heading"><div><p class="kicker">Step 2</p><h2 id="review-heading">Review the selection</h2><p>Check what will shape the digest and resolve any uncertain items.</p></div></div>',
+      '<div class="card-heading"><div><p class="kicker">Step 2</p><h2 id="review-heading">Review the selection</h2><p>Check what will shape the digest. You can change any included or excluded item before generating.</p></div></div>',
       '<p id="review-status" class="section-status" role="status" aria-live="polite" aria-atomic="true">Collect items to begin reviewing.</p>',
       '<div id="review-actions" class="review-actions row" hidden>',
       '<strong id="review-summary"></strong>',
@@ -115,7 +115,7 @@ export function settingsPage(): string {
       '<label class="switch-row"><input id="decision-enabled" type="checkbox"><span><strong>Use Strands Decider</strong><small>Only a loopback service is accepted.</small></span></label>',
       '<div id="decision-fields" class="field-grid three" hidden>',
       '<label>Service URL <span class="hint">loopback only</span><input id="decision-url" type="url" value="http://127.0.0.1:8000" required></label>',
-      '<label>Confidence <span class="hint">0–1</span><input id="confidence" type="number" min="0" max="1" step="0.01" value="0.9" required></label>',
+      '<label>Confidence <span class="hint">0–1</span><input id="confidence" type="number" min="0" max="1" step="0.01" value="0.85" required></label>',
       '<label>Timeout <span class="hint">seconds</span><input id="decision-timeout" type="number" min="1" value="10" required></label>',
       "</div>",
       "</section>",
@@ -563,6 +563,9 @@ const CSS = String.raw`
   .field-grid { display:grid; gap:1rem; margin-top:1rem; }
   .field-grid.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .field-grid.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .field-grid > label { display:flex; flex-direction:column; gap:.35rem; }
+  .field-grid > label > input,.field-grid > label > select,
+  .field-grid > label > textarea { margin-top:auto; }
   .hint { display:block; color:var(--muted); font-size:.78rem; font-weight:400; }
   .field-help { margin:.5rem 0 0; color:var(--muted); font-size:.9rem; }
   .advanced { margin-top:1rem; padding:.75rem 0 0; }
@@ -842,8 +845,7 @@ const HOME_SCRIPT = String.raw`
         setWorkflowStep("collect", "current", "Collect again");
         setWorkflowStep("review", "complete", "No items included");
         setWorkflowStep("generate", "blocked", "No included items");
-        generateStatus.textContent =
-          "No items are included. Adjust the collection and fetch again.";
+        generateStatus.textContent = "No items are included. Include one to continue.";
       }
       return;
     }
@@ -986,13 +988,24 @@ const HOME_SCRIPT = String.raw`
         if (meta.childNodes.length > 0) content.append(meta);
         content.append(reason);
         row.append(tag, content);
-        if (item.kind === "review" || item.kind === "fallback") {
+        if (item.kind !== "seen") {
           const actions = document.createElement("div");
           actions.className = "decision-actions";
-          actions.append(
-            reviewButton("Include", item.title, item.fingerprint, true),
-            reviewButton("Exclude", item.title, item.fingerprint, false),
-          );
+          if (item.kind === "review" || item.kind === "fallback") {
+            actions.append(
+              reviewButton("Include", item.title, item.fingerprint, true),
+              reviewButton("Exclude", item.title, item.fingerprint, false),
+            );
+          } else {
+            actions.append(
+              reviewButton(
+                item.selected ? "Exclude instead" : "Include instead",
+                item.title,
+                item.fingerprint,
+                !item.selected,
+              ),
+            );
+          }
           row.append(actions);
         }
         list.append(row);
@@ -1072,6 +1085,7 @@ const HOME_SCRIPT = String.raw`
   generateButton.addEventListener("click", async () => {
     generateButton.disabled = true;
     generateButton.textContent = "Generating…";
+    setReviewControlsDisabled(true);
     generatePanel.setAttribute("aria-busy", "true");
     setWorkflowStep("generate", "current", "Generating digest");
     let completed = false;
@@ -1112,6 +1126,7 @@ const HOME_SCRIPT = String.raw`
       generatePanel.setAttribute("aria-busy", "false");
       generateButton.disabled = completed;
       generateButton.textContent = "Generate digest";
+      if (!completed) setReviewControlsDisabled(false);
     }
   });
 

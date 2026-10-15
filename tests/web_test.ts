@@ -34,6 +34,21 @@ class WebClient implements ChatClient {
   }
 }
 
+class PausedWebClient implements ChatClient {
+  complete(): Promise<string> {
+    return Promise.resolve("summary");
+  }
+
+  async *stream(_messages: ChatMessage[], signal?: AbortSignal): AsyncIterable<string> {
+    await new Promise<void>((resolve) => {
+      if (signal?.aborted) resolve();
+      else signal?.addEventListener("abort", () => resolve(), { once: true });
+    });
+    signal?.throwIfAborted();
+    yield "";
+  }
+}
+
 class WebSelector implements SelectionPipeline {
   marked = 0;
 
@@ -267,11 +282,22 @@ test("web requires explicit resolution of uncertain selections", async () => {
     assertEquals(includedState.result.items[0].kind, "manual");
     assertMatch(includedState.result.items[0].reason, /^Included by user review\./);
 
-    const duplicate = await resolveSelection(app, {
+    const changedToExcluded = await resolveSelection(app, {
       fingerprint: "a".repeat(64),
       selected: false,
     });
-    assertEquals(duplicate.status, 409);
+    assertEquals(changedToExcluded.status, 200);
+    const excludedState = await changedToExcluded.json();
+    assertEquals(excludedState.result.itemCount, 0);
+    assertMatch(excludedState.result.items[0].reason, /^Excluded by user review\./);
+    assertEquals(excludedState.result.items[0].reason.includes("Included by"), false);
+
+    const changedBackToIncluded = await resolveSelection(app, {
+      fingerprint: "a".repeat(64),
+      selected: true,
+    });
+    assertEquals(changedBackToIncluded.status, 200);
+    assertEquals((await changedBackToIncluded.json()).result.itemCount, 1);
 
     const excluded = await resolveSelection(app, { all: true, selected: false });
     assertEquals(excluded.status, 200);
@@ -295,6 +321,35 @@ test("web requires explicit resolution of uncertain selections", async () => {
   } finally {
     await removeTempDir(historyDirectory);
   }
+});
+
+test("web locks selection changes while generation is running", async () => {
+  const app = new DistilWebApp({
+    config: testConfig(),
+    client: new PausedWebClient(),
+    selector: new WebSelector(),
+    collect: () =>
+      Promise.resolve({
+        items: [testItem()],
+        health: {},
+      }),
+  });
+
+  await app.handler(new Request("http://localhost/api/fetch", { method: "POST" }));
+  await completedFetch(app);
+  const generation = await app.handler(
+    new Request("http://localhost/api/generate", { method: "POST" }),
+  );
+  assertEquals(generation.status, 200);
+
+  const change = await resolveSelection(app, {
+    fingerprint: "a".repeat(64),
+    selected: false,
+  });
+  assertEquals(change.status, 409);
+  assertMatch((await change.json()).error, /generation is running/);
+
+  await generation.body?.cancel();
 });
 
 test("web validates days and confines history paths", async () => {
@@ -399,6 +454,12 @@ test("web settings recover first-run setup and apply a validated configuration",
     assertMatch(settingsHtml, /Add another source/);
     assertMatch(settingsHtml, /The key itself is never saved/);
     assertMatch(settingsHtml, /Service URL <span class="hint">loopback only<\/span>/);
+    assertMatch(settingsHtml, /id="confidence"[^>]+value="0\.85"/);
+    assertMatch(
+      settingsHtml,
+      /\.field-grid > label \{ display:flex; flex-direction:column; gap:\.35rem; \}/,
+    );
+    assertMatch(settingsHtml, /\.field-grid > label > textarea \{ margin-top:auto; \}/);
     assertMatch(
       settingsHtml,
       /\.switch-row input \{ flex:0 0 1rem; width:1rem; height:1rem; min-height:1rem;\s+margin:\.25rem 0 0; padding:0;/,
@@ -488,6 +549,11 @@ test("home page includes security headers and accessible controls", async () => 
   assertMatch(content, /generateProgress\.hidden = true/);
   assertMatch(content, /Include all/);
   assertMatch(content, /Exclude all/);
+  assertMatch(content, /You can change any included or excluded item before generating/);
+  assertMatch(content, /item\.selected \? "Exclude instead" : "Include instead"/);
+  assertMatch(content, /if \(item\.kind !== "seen"\)/);
+  assertMatch(content, /setReviewControlsDisabled\(true\)/);
+  assertMatch(content, /if \(!completed\) setReviewControlsDisabled\(false\)/);
   assertMatch(content, /\/api\/fetch\/status/);
   assertMatch(content, /\/api\/fetch\/selection/);
   assertMatch(content, /details\[data-source\]\[open\]/);

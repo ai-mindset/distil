@@ -7,7 +7,7 @@ import { streamDistil } from "./prompts.ts";
 import {
   ContentSelector,
   resolveAllPending,
-  resolvePendingSelection,
+  resolveSelection,
   type SelectionKind,
   type SelectionPipeline,
   type SelectionResult,
@@ -404,6 +404,12 @@ export class DistilWebApp {
     if (job?.status !== "complete" || !job.collection || !this.#cachedSelection) {
       return json({ error: "No completed fetch is available for review" }, 409);
     }
+    if (this.#generationInProgress) {
+      return json(
+        { error: "The selection cannot change while generation is running" },
+        409,
+      );
+    }
 
     let resolution: SelectionResolution;
     try {
@@ -416,7 +422,7 @@ export class DistilWebApp {
       const policy = resolution.selected ? "include" : "exclude";
       const selection = resolution.all
         ? resolveAllPending(this.#cachedSelection, policy)
-        : resolvePendingSelection(this.#cachedSelection, resolution.fingerprint, policy);
+        : resolveSelection(this.#cachedSelection, resolution.fingerprint, policy);
       this.#cachedSelection = selection;
       this.#cachedItems = selection.selected;
       job.result = fetchPayload(job.collection, selection);
