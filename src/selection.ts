@@ -1,3 +1,5 @@
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { hasErrorCode } from "./fs.ts";
 import {
   type DecisionClient,
   type DecisionVerdict,
@@ -10,12 +12,7 @@ const STATE_VERSION = 1;
 const MAX_SEEN_ITEMS = 20_000;
 
 export type SelectionKind =
-  | "selected"
-  | "excluded"
-  | "review"
-  | "seen"
-  | "fallback"
-  | "manual";
+  "selected" | "excluded" | "review" | "seen" | "fallback" | "manual";
 
 export interface ItemSelection {
   item: ContentItem;
@@ -69,7 +66,8 @@ export class ContentSelector implements SelectionPipeline {
   ) {
     this.#config = config;
     this.#focus = focus;
-    this.#decisionClient = dependencies.decisionClient ??
+    this.#decisionClient =
+      dependencies.decisionClient ??
       new StrandsDecisionClient(config, dependencies.fetcher);
     this.#seenStore = dependencies.seenStore ?? new FileSeenStore();
   }
@@ -121,13 +119,15 @@ export class ContentSelector implements SelectionPipeline {
     }
 
     if (!this.#config.enabled) {
-      selections.push(...candidates.map(({ item, fingerprint }) => ({
-        item,
-        fingerprint,
-        selected: true,
-        kind: "selected" as const,
-        reason: "New item; Strands selection is disabled",
-      })));
+      selections.push(
+        ...candidates.map(({ item, fingerprint }) => ({
+          item,
+          fingerprint,
+          selected: true,
+          kind: "selected" as const,
+          reason: "New item; Strands selection is disabled",
+        })),
+      );
       options.onProgress?.({
         stage: "selecting",
         completed: items.length,
@@ -142,9 +142,9 @@ export class ContentSelector implements SelectionPipeline {
       await this.#decisionClient.health(options.signal);
     } catch (error) {
       if (options.signal?.aborted) throw options.signal.reason;
-      warning = `Strands unavailable; affected items were left for review: ${
-        message(error)
-      }`;
+      warning = `Strands unavailable; affected items were left for review: ${message(
+        error,
+      )}`;
       selections.push(...fallbackSelections(candidates, warning));
       options.onProgress?.({
         stage: "selecting",
@@ -175,9 +175,9 @@ export class ContentSelector implements SelectionPipeline {
         });
       } catch (error) {
         if (options.signal?.aborted) throw options.signal.reason;
-        warning = `Strands failed; affected items were left for review: ${
-          message(error)
-        }`;
+        warning = `Strands failed; affected items were left for review: ${message(
+          error,
+        )}`;
         selections.push(...fallbackSelections(candidates.slice(index), warning));
         options.onProgress?.({
           stage: "selecting",
@@ -220,7 +220,7 @@ export function resolvePendingSelection(
     result.items.map((selection) =>
       selection === target
         ? manualResolution(selection, policy, "user review")
-        : selection
+        : selection,
     ),
   );
 }
@@ -234,7 +234,7 @@ export function resolveAllPending(
     result.items.map((selection) =>
       isPendingSelection(selection)
         ? manualResolution(selection, policy, "explicit bulk review")
-        : selection
+        : selection,
     ),
   );
 }
@@ -264,9 +264,9 @@ export class FileSeenStore implements SeenStore {
   async #read(): Promise<SeenState> {
     let text: string;
     try {
-      text = await Deno.readTextFile(this.#path);
+      text = await readFile(this.#path, "utf8");
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) return emptyState();
+      if (hasErrorCode(error, "ENOENT")) return emptyState();
       throw error;
     }
     try {
@@ -287,20 +287,20 @@ export class FileSeenStore implements SeenStore {
   }
 
   async #write(state: SeenState): Promise<void> {
-    await Deno.mkdir(parentDirectory(this.#path), { recursive: true });
+    await mkdir(parentDirectory(this.#path), { recursive: true });
     const temporary = `${this.#path}.tmp-${crypto.randomUUID()}`;
     try {
-      const file = await Deno.open(temporary, { createNew: true, write: true });
+      const file = await open(temporary, "wx");
       try {
-        await file.write(new TextEncoder().encode(`${JSON.stringify(state, null, 2)}\n`));
+        await file.writeFile(`${JSON.stringify(state, null, 2)}\n`);
         await file.sync();
       } finally {
-        file.close();
+        await file.close();
       }
-      await Deno.rename(temporary, this.#path);
+      await rename(temporary, this.#path);
     } finally {
       try {
-        await Deno.remove(temporary);
+        await rm(temporary);
       } catch {
         // Preserve the write or rename error; the temporary file is safe to ignore.
       }
@@ -311,15 +311,17 @@ export class FileSeenStore implements SeenStore {
 export async function itemFingerprint(item: ContentItem): Promise<string> {
   const itemUrl = normalizedUrl(item.link);
   const sourceUrl = normalizedUrl(item.sourceUrl);
-  const identity = itemUrl && itemUrl !== sourceUrl
-    ? itemUrl
-    : `${sourceUrl}\n${item.source.trim()}\n${item.title.trim()}`;
+  const identity =
+    itemUrl && itemUrl !== sourceUrl
+      ? itemUrl
+      : `${sourceUrl}\n${item.source.trim()}\n${item.title.trim()}`;
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(identity.normalize("NFKC")),
   );
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function selectionFromVerdict(
@@ -336,8 +338,7 @@ function selectionFromVerdict(
       ...candidate,
       selected: false,
       kind: "review",
-      reason:
-        `Strands could not classify relevance reliably; its top choice was ${verdict.choice}, with ${confidence} classification confidence, below the ${threshold} decision threshold`,
+      reason: `Strands could not classify relevance reliably; its top choice was ${verdict.choice}, with ${confidence} classification confidence, below the ${threshold} decision threshold`,
       confidence: verdict.confidence,
     };
   }
@@ -346,9 +347,9 @@ function selectionFromVerdict(
     ...candidate,
     selected,
     kind: selected ? "selected" : "excluded",
-    reason: `Strands chose ${verdict.choice} with ${
-      formatConfidence(verdict.confidence)
-    } confidence in its relevance classification`,
+    reason: `Strands chose ${verdict.choice} with ${formatConfidence(
+      verdict.confidence,
+    )} confidence in its relevance classification`,
     confidence: verdict.confidence,
   };
 }
@@ -390,9 +391,9 @@ function resolvedResult(
   return {
     ...result,
     items,
-    selected: items.filter((selection) => selection.selected).map((selection) =>
-      selection.item
-    ),
+    selected: items
+      .filter((selection) => selection.selected)
+      .map((selection) => selection.item),
   };
 }
 
@@ -402,14 +403,15 @@ function resultInInputOrder(
   warning?: string,
 ): SelectionResult {
   const order = new Map(fingerprints.map((fingerprint, index) => [fingerprint, index]));
-  selections.sort((left, right) =>
-    (order.get(left.fingerprint) ?? 0) - (order.get(right.fingerprint) ?? 0)
+  selections.sort(
+    (left, right) =>
+      (order.get(left.fingerprint) ?? 0) - (order.get(right.fingerprint) ?? 0),
   );
   return {
     items: selections,
-    selected: selections.filter((selection) => selection.selected).map((selection) =>
-      selection.item
-    ),
+    selected: selections
+      .filter((selection) => selection.selected)
+      .map((selection) => selection.item),
     warning,
   };
 }

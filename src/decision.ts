@@ -89,8 +89,11 @@ export class StrandsDecisionClient implements DecisionClient {
     const choice = answer.choice;
     const confidence = answer.confidence;
     if (
-      answer.type !== "choice" || (choice !== "include" && choice !== "exclude") ||
-      typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 ||
+      answer.type !== "choice" ||
+      (choice !== "include" && choice !== "exclude") ||
+      typeof confidence !== "number" ||
+      !Number.isFinite(confidence) ||
+      confidence < 0 ||
       confidence > 1
     ) {
       throw new Error("Strands returned an invalid selection answer");
@@ -106,6 +109,6 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object"
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {};
 }

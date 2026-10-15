@@ -1,3 +1,5 @@
+import { makeTempDir, removeTempDir } from "./temp.ts";
+import { test } from "bun:test";
 import type { DecisionClient, DecisionVerdict } from "../src/decision.ts";
 import {
   ContentSelector,
@@ -46,7 +48,7 @@ class FakeDecisionClient implements DecisionClient {
   }
 }
 
-Deno.test("selection skips seen items and trusts only confident Strands choices", async () => {
+test("selection skips seen items and trusts only confident Strands choices", async () => {
   const store = new MemorySeenStore();
   store.seen.add(await itemFingerprint(item(1)));
   const decisions = new FakeDecisionClient();
@@ -64,13 +66,14 @@ Deno.test("selection skips seen items and trusts only confident Strands choices"
   const result = await selector.select([item(1), item(2), item(3), item(4)], {
     onProgress: (update) => progress.push(update),
   });
-  assertEquals(result.items.map((entry) => entry.kind), [
-    "seen",
-    "selected",
-    "excluded",
-    "review",
-  ]);
-  assertEquals(result.selected.map((entry) => entry.title), ["Title 2"]);
+  assertEquals(
+    result.items.map((entry) => entry.kind),
+    ["seen", "selected", "excluded", "review"],
+  );
+  assertEquals(
+    result.selected.map((entry) => entry.title),
+    ["Title 2"],
+  );
   assertEquals(
     result.items[3].reason,
     "Strands could not classify relevance reliably; its top choice was exclude, with 55% classification confidence, below the 90% decision threshold",
@@ -91,7 +94,7 @@ Deno.test("selection skips seen items and trusts only confident Strands choices"
   assertEquals(store.seen.size, 4);
 });
 
-Deno.test("selection reports uncertain include and boundary decisions accurately", async () => {
+test("selection reports uncertain include and boundary decisions accurately", async () => {
   const decisions = new FakeDecisionClient();
   decisions.verdicts = [
     { choice: "include", confidence: 0.899 },
@@ -103,8 +106,14 @@ Deno.test("selection reports uncertain include and boundary decisions accurately
   });
 
   const result = await selector.select([item(1), item(2)]);
-  assertEquals(result.items.map((entry) => entry.kind), ["review", "excluded"]);
-  assertEquals(result.items.map((entry) => entry.selected), [false, false]);
+  assertEquals(
+    result.items.map((entry) => entry.kind),
+    ["review", "excluded"],
+  );
+  assertEquals(
+    result.items.map((entry) => entry.selected),
+    [false, false],
+  );
   assertEquals(
     result.items[0].reason,
     "Strands could not classify relevance reliably; its top choice was include, with 89.9% classification confidence, below the 90% decision threshold",
@@ -115,7 +124,7 @@ Deno.test("selection reports uncertain include and boundary decisions accurately
   );
 });
 
-Deno.test("selection requires review when the local decision service is unavailable", async () => {
+test("selection requires review when the local decision service is unavailable", async () => {
   const decisions = new FakeDecisionClient();
   decisions.healthError = new Error("connection refused");
   const selector = new ContentSelector(config, "research", {
@@ -125,18 +134,24 @@ Deno.test("selection requires review when the local decision service is unavaila
 
   const result = await selector.select([item(1), item(2)]);
   assertEquals(result.selected.length, 0);
-  assertEquals(result.items.map((entry) => entry.kind), ["fallback", "fallback"]);
+  assertEquals(
+    result.items.map((entry) => entry.kind),
+    ["fallback", "fallback"],
+  );
   assertEquals(unresolvedSelections(result).length, 2);
   assertMatch(result.warning ?? "", /connection refused/);
 
   const resolved = resolveAllPending(result, "exclude");
-  assertEquals(resolved.items.map((entry) => entry.kind), ["manual", "manual"]);
+  assertEquals(
+    resolved.items.map((entry) => entry.kind),
+    ["manual", "manual"],
+  );
   assertEquals(resolved.selected.length, 0);
   assertEquals(unresolvedSelections(resolved).length, 0);
   assertMatch(resolved.items[0].reason, /^Excluded by explicit bulk review\./);
 });
 
-Deno.test("selection resolution rejects unknown and final decisions", async () => {
+test("selection resolution rejects unknown and final decisions", async () => {
   const decisions = new FakeDecisionClient();
   decisions.verdicts = [{ choice: "include", confidence: 0.95 }];
   const selector = new ContentSelector(config, "research", {
@@ -155,8 +170,8 @@ Deno.test("selection resolution rejects unknown and final decisions", async () =
   );
 });
 
-Deno.test("file seen store persists normalized item fingerprints", async () => {
-  const directory = await Deno.makeTempDir();
+test("file seen store persists normalized item fingerprints", async () => {
+  const directory = await makeTempDir();
   try {
     const store = new FileSeenStore(`${directory}/state/seen.json`);
     const tracked = item(1);
@@ -169,7 +184,7 @@ Deno.test("file seen store persists normalized item fingerprints", async () => {
     await store.add([fingerprint], new Date("2026-10-08T12:00:00Z"));
     assertEquals((await store.load()).has(fingerprint), true);
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await removeTempDir(directory);
   }
 });
 

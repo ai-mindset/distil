@@ -17,13 +17,11 @@ export class OpenAICompatibleClient implements ChatClient {
     this.#config = config;
     this.#fetcher = dependencies.fetcher ?? fetch;
     this.#sleep = dependencies.sleep ?? delay;
-    const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
-    this.#apiKey = dependencies.apiKey ??
-      (config.apiKeyEnv ? getEnv(config.apiKeyEnv) ?? "" : "");
+    const getEnv = dependencies.getEnv ?? ((name: string) => process.env[name]);
+    this.#apiKey =
+      dependencies.apiKey ?? (config.apiKeyEnv ? (getEnv(config.apiKeyEnv) ?? "") : "");
     if (config.apiKeyEnv && !this.#apiKey) {
-      throw new Error(
-        `Missing API key: set ${config.apiKeyEnv} for ${config.baseUrl}`,
-      );
+      throw new Error(`Missing API key: set ${config.apiKeyEnv} for ${config.baseUrl}`);
     }
   }
 
@@ -35,10 +33,7 @@ export class OpenAICompatibleClient implements ChatClient {
     return content;
   }
 
-  async *stream(
-    messages: ChatMessage[],
-    signal?: AbortSignal,
-  ): AsyncIterable<string> {
+  async *stream(messages: ChatMessage[], signal?: AbortSignal): AsyncIterable<string> {
     const response = await this.#request(messages, true, signal);
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/event-stream")) {
@@ -138,7 +133,8 @@ function completionContent(payload: unknown): string {
 }
 
 function parseSseEvent(event: string): string | null {
-  const data = event.split("\n")
+  const data = event
+    .split("\n")
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart())
     .join("\n")
@@ -163,15 +159,17 @@ function parseSseEvent(event: string): string | null {
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content.map((part) => {
-    if (typeof part === "string") return part;
-    const record = asRecord(part);
-    return typeof record.text === "string"
-      ? record.text
-      : typeof record.content === "string"
-      ? record.content
-      : "";
-  }).join("");
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      const record = asRecord(part);
+      return typeof record.text === "string"
+        ? record.text
+        : typeof record.content === "string"
+          ? record.content
+          : "";
+    })
+    .join("");
 }
 
 async function parseJson(response: Response): Promise<unknown> {
@@ -184,7 +182,7 @@ async function parseJson(response: Response): Promise<unknown> {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object"
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {};
 }
 

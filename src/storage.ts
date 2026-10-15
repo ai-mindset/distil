@@ -1,11 +1,15 @@
+import { mkdir, open, readFile, readdir } from "node:fs/promises";
+import { platform } from "node:os";
+import { hasErrorCode } from "./fs.ts";
 export async function saveDigest(
   directory: string,
   content: string,
   now = new Date(),
 ): Promise<string> {
   const expanded = expandHome(directory);
-  await Deno.mkdir(expanded, { recursive: true });
-  const timestamp = now.toISOString()
+  await mkdir(expanded, { recursive: true });
+  const timestamp = now
+    .toISOString()
     .replace("T", "_")
     .replace(/\.\d{3}Z$/, "Z")
     .replaceAll(":", "");
@@ -16,16 +20,16 @@ export async function saveDigest(
     const filename = `${stem}${suffix === 1 ? "" : `-${suffix}`}.md`;
     const path = joinPath(expanded, filename);
     try {
-      const file = await Deno.open(path, { createNew: true, write: true });
+      const file = await open(path, "wx");
       try {
-        await file.write(encoded);
+        await file.writeFile(encoded);
         await file.sync();
       } finally {
-        file.close();
+        await file.close();
       }
       return path;
     } catch (error) {
-      if (error instanceof Deno.errors.AlreadyExists) continue;
+      if (hasErrorCode(error, "EEXIST")) continue;
       throw error;
     }
   }
@@ -36,24 +40,24 @@ export async function listDigests(directory: string): Promise<string[]> {
   const expanded = expandHome(directory);
   try {
     const names: string[] = [];
-    for await (const entry of Deno.readDir(expanded)) {
-      if (entry.isFile && isDigestFilename(entry.name)) names.push(entry.name);
+    for (const entry of await readdir(expanded, { withFileTypes: true })) {
+      if (entry.isFile() && isDigestFilename(entry.name)) names.push(entry.name);
     }
     return names.sort().reverse();
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return [];
+    if (hasErrorCode(error, "ENOENT")) return [];
     throw error;
   }
 }
 
 export async function readDigest(directory: string, filename: string): Promise<string> {
   if (!isDigestFilename(filename)) throw new Error("Invalid digest filename");
-  return await Deno.readTextFile(joinPath(expandHome(directory), filename));
+  return await readFile(joinPath(expandHome(directory), filename), "utf8");
 }
 
 export function expandHome(path: string): string {
   if (path === "~" || path.startsWith("~/") || path.startsWith("~\\")) {
-    const home = Deno.env.get(Deno.build.os === "windows" ? "USERPROFILE" : "HOME");
+    const home = process.env[platform() === "win32" ? "USERPROFILE" : "HOME"];
     if (!home) throw new Error("Cannot expand ~ because the home directory is unknown");
     return path === "~" ? home : joinPath(home, path.slice(2));
   }

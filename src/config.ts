@@ -1,3 +1,5 @@
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { hasErrorCode } from "./fs.ts";
 import type { Config, DecisionConfig, FeedConfig, LlmConfig, Provider } from "./types.ts";
 
 interface TomlTable {
@@ -47,10 +49,10 @@ export interface EditableConfig {
 export async function loadConfig(path = "config.toml"): Promise<Config> {
   let text: string;
   try {
-    text = await Deno.readTextFile(path);
+    text = await readFile(path, "utf8");
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      throw new Error(`Config file not found: ${path}`);
+    if (hasErrorCode(error, "ENOENT")) {
+      throw new Error(`Config file not found: ${path}`, { cause: error });
     }
     throw error;
   }
@@ -151,10 +153,7 @@ export function normalizeEditableConfig(value: unknown): Config {
         decision.confidenceThreshold,
         "decision.confidenceThreshold",
       ),
-      timeout_seconds: inputScalar(
-        decision.timeoutSeconds,
-        "decision.timeoutSeconds",
-      ),
+      timeout_seconds: inputScalar(decision.timeoutSeconds, "decision.timeoutSeconds"),
     },
     output: {
       directory: inputScalar(output.directory, "output.directory"),
@@ -237,11 +236,11 @@ export async function saveConfig(path: string, config: Config): Promise<void> {
   normalizeConfig(parseToml(content));
   const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`;
   try {
-    await Deno.writeTextFile(temporaryPath, content, { createNew: true, mode: 0o600 });
-    await Deno.rename(temporaryPath, path);
+    await writeFile(temporaryPath, content, { flag: "wx", mode: 0o600 });
+    await rename(temporaryPath, path);
   } finally {
     try {
-      await Deno.remove(temporaryPath);
+      await rm(temporaryPath);
     } catch {
       // A failed write or rename remains the primary error; cleanup is best effort.
     }
@@ -302,9 +301,10 @@ export function normalizeConfig(raw: TomlTable): Config {
   const explicitProvider = stringValue(llmRaw.provider, "");
   const explicitBaseUrl = stringValue(llmRaw.base_url, "");
   const provider = resolveProvider(explicitProvider, rawModel, explicitBaseUrl);
-  const model = provider === "ollama" && rawModel.startsWith("ollama/")
-    ? rawModel.slice("ollama/".length)
-    : rawModel;
+  const model =
+    provider === "ollama" && rawModel.startsWith("ollama/")
+      ? rawModel.slice("ollama/".length)
+      : rawModel;
   if (!model) throw new Error("llm.model must not be empty");
 
   const baseUrl = trimTrailingSlash(
@@ -360,11 +360,8 @@ export function normalizeConfig(raw: TomlTable): Config {
       1,
       "decision.confidence_threshold",
     ),
-    timeoutMs: positiveNumber(
-      decisionRaw.timeout_seconds,
-      10,
-      "decision.timeout_seconds",
-    ) * 1_000,
+    timeoutMs:
+      positiveNumber(decisionRaw.timeout_seconds, 10, "decision.timeout_seconds") * 1_000,
   };
 
   return {
@@ -397,9 +394,10 @@ function normalizeFeed(value: TomlValue, index: number): FeedConfig {
     throw new Error(`${label}.type must be "rss" or "youtube"`);
   }
 
-  const maxItems = raw.max_items === undefined
-    ? undefined
-    : positiveInteger(raw.max_items, 1, `${label}.max_items`);
+  const maxItems =
+    raw.max_items === undefined
+      ? undefined
+      : positiveInteger(raw.max_items, 1, `${label}.max_items`);
   const keywords = optionalStringArray(raw.keywords, `${label}.keywords`);
   const pattern = raw.pattern === undefined ? undefined : stringValue(raw.pattern, "");
   if (pattern) {
@@ -440,8 +438,11 @@ function inferApiKeyEnv(baseUrl: string): string {
 
 function isYoutubeUrl(value: string): boolean {
   const hostname = new URL(value).hostname.toLowerCase();
-  return hostname === "youtu.be" || hostname === "youtube.com" ||
-    hostname.endsWith(".youtube.com");
+  return (
+    hostname === "youtu.be" ||
+    hostname === "youtube.com" ||
+    hostname.endsWith(".youtube.com")
+  );
 }
 
 function parseValue(value: string, line: number): TomlValue {
@@ -625,7 +626,9 @@ function boundedNumber(
 ): number {
   const result = value === undefined ? fallback : value;
   if (
-    typeof result !== "number" || !Number.isFinite(result) || result < minimum ||
+    typeof result !== "number" ||
+    !Number.isFinite(result) ||
+    result < minimum ||
     result > maximum
   ) {
     throw new Error(`${name} must be between ${minimum} and ${maximum}`);
@@ -708,7 +711,8 @@ function inputTable(value: unknown, name: string): Record<string, unknown> {
 
 function inputScalar(value: unknown, name: string): TomlValue {
   if (
-    typeof value !== "string" && typeof value !== "number" &&
+    typeof value !== "string" &&
+    typeof value !== "number" &&
     typeof value !== "boolean"
   ) {
     throw new Error(`${name} has an invalid value`);

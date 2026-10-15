@@ -1,8 +1,10 @@
+import { makeTempDir, removeTempDir } from "./temp.ts";
+import { test } from "bun:test";
 import { isDigestFilename, listDigests, readDigest, saveDigest } from "../src/storage.ts";
 import { assert, assertEquals, assertRejects } from "./assert.ts";
 
-Deno.test("saves collision-safe digest files and lists newest first", async () => {
-  const directory = await Deno.makeTempDir();
+test("saves collision-safe digest files and lists newest first", async () => {
+  const directory = await makeTempDir();
   try {
     const now = new Date("2026-10-08T12:34:56Z");
     const first = await saveDigest(directory, "first", now);
@@ -11,15 +13,18 @@ Deno.test("saves collision-safe digest files and lists newest first", async () =
     const names = await listDigests(directory);
     assertEquals(names.length, 2);
     assertEquals(
-      await readDigest(directory, names.find((name) => name.endsWith("-2.md"))!),
+      await readDigest(
+        directory,
+        names.find((name) => name.endsWith("-2.md"))!,
+      ),
       "second",
     );
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await removeTempDir(directory);
   }
 });
 
-Deno.test("rejects history traversal", async () => {
+test("rejects history traversal", async () => {
   assert(!isDigestFilename("../config.toml"));
   assert(isDigestFilename("distil-2026-10-08_123456Z.md"));
   await assertRejects(

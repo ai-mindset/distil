@@ -1,3 +1,4 @@
+import { platform } from "node:os";
 import { collectContent } from "./content.ts";
 import { loadConfig, loadConfigForWeb } from "./config.ts";
 import { StrandsDecisionClient } from "./decision.ts";
@@ -14,9 +15,9 @@ import {
 import { saveDigest } from "./storage.ts";
 import type { ProgressUpdate } from "./types.ts";
 import { DistilWebApp, startServer } from "./web.ts";
-import denoConfig from "../deno.json" with { type: "json" };
+import packageConfig from "../package.json" with { type: "json" };
 
-export const VERSION = denoConfig.version;
+export const VERSION = packageConfig.version;
 
 export interface CliOptions {
   command?: "run" | "preview" | "serve" | "setup";
@@ -46,7 +47,9 @@ export function parseCliArgs(args: string[]): CliOptions {
   if (remaining[0] && !remaining[0].startsWith("-")) {
     const command = remaining.shift();
     if (
-      command !== "run" && command !== "preview" && command !== "serve" &&
+      command !== "run" &&
+      command !== "preview" &&
+      command !== "serve" &&
       command !== "setup"
     ) {
       throw new Error(`Unknown command: ${command}`);
@@ -116,7 +119,7 @@ export function parseCliArgs(args: string[]): CliOptions {
   return options;
 }
 
-export async function main(args = Deno.args): Promise<number> {
+export async function main(args = process.argv.slice(2)): Promise<number> {
   try {
     const options = parseCliArgs(args);
     if (options.version) {
@@ -128,10 +131,9 @@ export async function main(args = Deno.args): Promise<number> {
       return 0;
     }
 
-    const webConfiguration = options.command === "serve"
-      ? await loadConfigForWeb(options.config)
-      : undefined;
-    const config = webConfiguration?.config ?? await loadConfig(options.config);
+    const webConfiguration =
+      options.command === "serve" ? await loadConfigForWeb(options.config) : undefined;
+    const config = webConfiguration?.config ?? (await loadConfig(options.config));
     if (options.command === "setup") {
       let localService = false;
       if (config.llm.provider === "ollama") {
@@ -215,19 +217,19 @@ export async function main(args = Deno.args): Promise<number> {
       ensureProvider: (llm) =>
         llm.provider === "ollama" ? ensureOllamaReady(llm) : Promise.resolve(),
     });
-    const server = startServer(app, {
+    startServer(app, {
       hostname: options.hostname,
       port: options.port,
       onListen: (address) => {
-        const browserHost = options.hostname === "0.0.0.0" || options.hostname === "::"
-          ? "127.0.0.1"
-          : options.hostname;
+        const browserHost =
+          options.hostname === "0.0.0.0" || options.hostname === "::"
+            ? "127.0.0.1"
+            : options.hostname;
         const url = `http://${browserHost}:${address.port}`;
         console.log(`Distil is running at ${url}`);
         if (options.browser) void openBrowser(url);
       },
     });
-    await server.finished;
     return 0;
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -284,19 +286,19 @@ function message(error: unknown): string {
 }
 
 async function openBrowser(url: string): Promise<void> {
-  const command = Deno.build.os === "windows"
-    ? { name: "cmd", args: ["/c", "start", "", url] }
-    : Deno.build.os === "darwin"
-    ? { name: "open", args: [url] }
-    : { name: "xdg-open", args: [url] };
+  const command =
+    platform() === "win32"
+      ? { name: "cmd", args: ["/c", "start", "", url] }
+      : platform() === "darwin"
+        ? { name: "open", args: [url] }
+        : { name: "xdg-open", args: [url] };
   try {
-    const result = await new Deno.Command(command.name, {
-      args: command.args,
-      stdin: "null",
-      stdout: "null",
-      stderr: "null",
-    }).output();
-    if (!result.success) console.error("Warning: could not open the browser.");
+    const child = Bun.spawn([command.name, ...command.args], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    if ((await child.exited) !== 0) console.error("Warning: could not open the browser.");
   } catch {
     console.error("Warning: could not open the browser.");
   }

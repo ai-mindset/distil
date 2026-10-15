@@ -1,3 +1,4 @@
+import { hasErrorCode } from "./fs.ts";
 import type { FetchLike, LlmConfig } from "./types.ts";
 
 export interface OllamaDependencies {
@@ -33,8 +34,7 @@ export async function ensureOllamaReady(
     throw new Error(
       `Could not reach the configured Ollama endpoint at ${
         new URL(config.baseUrl).origin
-      }. ` +
-        `Start the SSH tunnel or remote service and retry: ${message(fetchError)}`,
+      }. ` + `Start the SSH tunnel or remote service and retry: ${message(fetchError)}`,
     );
   }
   if (!models) {
@@ -64,34 +64,39 @@ export async function ensureOllamaReady(
 
 export function isLoopbackUrl(value: string): boolean {
   const hostname = new URL(value).hostname.toLowerCase();
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" ||
-    hostname === "[::1]";
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  );
 }
 
 async function fetchModels(fetcher: FetchLike, url: string): Promise<string[]> {
   const response = await fetcher(url, { signal: AbortSignal.timeout(5_000) });
   if (!response.ok) throw new Error(`Ollama returned HTTP ${response.status}`);
-  const payload = await response.json() as {
+  const payload = (await response.json()) as {
     models?: Array<{ name?: string; model?: string }>;
   };
   if (!Array.isArray(payload.models)) throw new Error("Ollama returned malformed JSON");
-  return payload.models.flatMap((model) => [model.name, model.model])
+  return payload.models
+    .flatMap((model) => [model.name, model.model])
     .filter((name): name is string => typeof name === "string");
 }
 
 function startOllamaServer(): Promise<void> {
-  let child: Deno.ChildProcess;
+  let child: ReturnType<typeof Bun.spawn>;
   try {
-    child = new Deno.Command("ollama", {
-      args: ["serve"],
-      stdin: "null",
-      stdout: "null",
-      stderr: "null",
-    }).spawn();
+    child = Bun.spawn(["ollama", "serve"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (hasErrorCode(error, "ENOENT")) {
       throw new Error(
         "Ollama is not installed. Install it from https://ollama.com/download and retry.",
+        { cause: error },
       );
     }
     throw error;
@@ -101,21 +106,25 @@ function startOllamaServer(): Promise<void> {
 }
 
 async function pullOllamaModel(model: string): Promise<void> {
-  let output: Deno.CommandOutput;
+  let stderr: string;
+  let exitCode: number;
   try {
-    output = await new Deno.Command("ollama", {
-      args: ["pull", model],
+    const child = Bun.spawn(["ollama", "pull", model], {
       stdout: "inherit",
-      stderr: "piped",
-    }).output();
+      stderr: "pipe",
+    });
+    [stderr, exitCode] = await Promise.all([
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      throw new Error("Ollama is not installed");
+    if (hasErrorCode(error, "ENOENT")) {
+      throw new Error("Ollama is not installed", { cause: error });
     }
     throw error;
   }
-  if (!output.success) {
-    const details = new TextDecoder().decode(output.stderr).trim();
+  if (exitCode !== 0) {
+    const details = stderr.trim();
     throw new Error(
       `Could not pull Ollama model ${model}${details ? `: ${details}` : ""}`,
     );

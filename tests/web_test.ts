@@ -1,21 +1,25 @@
+import { makeTempDir, removeTempDir } from "./temp.ts";
+import { test } from "bun:test";
 import type { ChatClient, ChatMessage, Config, ContentItem } from "../src/types.ts";
 import { editableConfig, setupConfig } from "../src/config.ts";
-import { distilLogoUrl, DistilWebApp } from "../src/web.ts";
+import { DistilWebApp, handleServerRequest } from "../src/web.ts";
 import type { SelectionPipeline, SelectionResult } from "../src/selection.ts";
 import { assertEquals, assertMatch } from "./assert.ts";
 
-Deno.test("logo path supports source and bundled standalone layouts", () => {
-  assertEquals(
-    distilLogoUrl("file:///workspace/src/web.ts", false).href,
-    "file:///workspace/assets/distil-logo.png",
+test("Bun server keeps generation streams open while idle", async () => {
+  const app = new DistilWebApp({ config: setupConfig(), client: new WebClient() });
+  const timeouts: number[] = [];
+  const server = {
+    timeout: (_request: Request, seconds: number) => timeouts.push(seconds),
+  };
+  const generation = await handleServerRequest(
+    app,
+    new Request("http://localhost/api/generate", { method: "POST" }),
+    server,
   );
-  assertEquals(
-    distilLogoUrl(
-      "file:///tmp/deno-compile-distil/.deno_compile_bundle.mjs",
-      true,
-    ).href,
-    "file:///tmp/deno-compile-distil/assets/distil-logo.png",
-  );
+  assertEquals(generation.status, 409);
+  await handleServerRequest(app, new Request("http://localhost/health"), server);
+  assertEquals(timeouts, [0]);
 });
 
 class WebClient implements ChatClient {
@@ -61,9 +65,10 @@ class ReviewSelector implements SelectionPipeline {
         fingerprint: (index === 0 ? "a" : "b").repeat(64),
         selected: false,
         kind: index === 0 ? "review" : "fallback",
-        reason: index === 0
-          ? "Strands classification confidence was below the threshold"
-          : "Strands was unavailable",
+        reason:
+          index === 0
+            ? "Strands classification confidence was below the threshold"
+            : "Strands was unavailable",
         confidence: index === 0 ? 0.12 : undefined,
       })),
       selected: [],
@@ -77,8 +82,8 @@ class ReviewSelector implements SelectionPipeline {
   }
 }
 
-Deno.test("web fetch and generation share the same pipeline", async () => {
-  const historyDirectory = await Deno.makeTempDir();
+test("web fetch and generation share the same pipeline", async () => {
+  const historyDirectory = await makeTempDir();
   try {
     const selector = new WebSelector();
     const app = new DistilWebApp({
@@ -143,11 +148,11 @@ Deno.test("web fetch and generation share the same pipeline", async () => {
     assertEquals(saved.status, 200);
     assertMatch(await saved.text(), /# Digest/);
   } finally {
-    await Deno.remove(historyDirectory, { recursive: true });
+    await removeTempDir(historyDirectory);
   }
 });
 
-Deno.test("web fetch survives navigation and can be interrupted and reset", async () => {
+test("web fetch survives navigation and can be interrupted and reset", async () => {
   let signal: AbortSignal | undefined;
   const app = new DistilWebApp({
     config: testConfig(),
@@ -205,8 +210,8 @@ Deno.test("web fetch survives navigation and can be interrupted and reset", asyn
   );
 });
 
-Deno.test("web requires explicit resolution of uncertain selections", async () => {
-  const historyDirectory = await Deno.makeTempDir();
+test("web requires explicit resolution of uncertain selections", async () => {
+  const historyDirectory = await makeTempDir();
   try {
     const selector = new ReviewSelector();
     const app = new DistilWebApp({
@@ -275,10 +280,10 @@ Deno.test("web requires explicit resolution of uncertain selections", async () =
     assertEquals(resolved.result.skippedCount, 1);
     assertEquals(resolved.result.unresolvedCount, 0);
     assertMatch(resolved.progress.message, /0 require review/);
-    assertEquals(resolved.result.items.map((item: { kind: string }) => item.kind), [
-      "manual",
-      "manual",
-    ]);
+    assertEquals(
+      resolved.result.items.map((item: { kind: string }) => item.kind),
+      ["manual", "manual"],
+    );
 
     const generated = await app.handler(
       new Request("http://localhost/api/generate", { method: "POST" }),
@@ -287,11 +292,11 @@ Deno.test("web requires explicit resolution of uncertain selections", async () =
     assertMatch(await generated.text(), /event: complete/);
     assertEquals(selector.marked, 2);
   } finally {
-    await Deno.remove(historyDirectory, { recursive: true });
+    await removeTempDir(historyDirectory);
   }
 });
 
-Deno.test("web validates days and confines history paths", async () => {
+test("web validates days and confines history paths", async () => {
   const app = new DistilWebApp({
     config: testConfig(),
     client: new WebClient(),
@@ -357,8 +362,8 @@ Deno.test("web validates days and confines history paths", async () => {
   assertEquals(crossOriginSettings.status, 403);
 });
 
-Deno.test("web settings recover first-run setup and apply a validated configuration", async () => {
-  const historyDirectory = await Deno.makeTempDir();
+test("web settings recover first-run setup and apply a validated configuration", async () => {
+  const historyDirectory = await makeTempDir();
   try {
     let saved: Config | undefined;
     let generatedModel = "";
@@ -400,9 +405,9 @@ Deno.test("web settings recover first-run setup and apply a validated configurat
     if (!settingsScript) throw new Error("settings page script was missing");
     new Function(settingsScript);
 
-    const initial = await (await app.handler(
-      new Request("http://localhost/api/config"),
-    )).json();
+    const initial = await (
+      await app.handler(new Request("http://localhost/api/config"))
+    ).json();
     assertEquals(initial.configured, false);
     assertEquals(initial.config.feeds, []);
 
@@ -434,11 +439,11 @@ Deno.test("web settings recover first-run setup and apply a validated configurat
     await generated.text();
     assertEquals(generatedModel, "configured-model");
   } finally {
-    await Deno.remove(historyDirectory, { recursive: true });
+    await removeTempDir(historyDirectory);
   }
 });
 
-Deno.test("home page includes security headers and accessible controls", async () => {
+test("home page includes security headers and accessible controls", async () => {
   const app = new DistilWebApp({ config: testConfig(), client: new WebClient() });
   const response = await app.handler(new Request("http://localhost/"));
   const content = await response.text();
@@ -476,9 +481,7 @@ Deno.test("home page includes security headers and accessible controls", async (
   if (!script) throw new Error("home page script was missing");
   new Function(script);
 
-  const logo = await app.handler(
-    new Request("http://localhost/assets/distil-logo.png"),
-  );
+  const logo = await app.handler(new Request("http://localhost/assets/distil-logo.png"));
   assertEquals(logo.status, 200);
   assertEquals(logo.headers.get("content-type"), "image/png");
   assertEquals((await logo.arrayBuffer()).byteLength > 1_000, true);

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { hasErrorCode } from "./fs.ts";
+import logoPath from "../assets/distil-logo.png" with { type: "file" };
 import { collectContent } from "./content.ts";
 import { editableConfig, normalizeEditableConfig, saveConfig } from "./config.ts";
 import { streamDistil } from "./prompts.ts";
@@ -21,19 +24,7 @@ import type {
 } from "./types.ts";
 import { historyPage, homePage, notFoundPage, settingsPage, viewPage } from "./web_ui.ts";
 
-export function distilLogoUrl(
-  moduleUrl: string | URL,
-  standalone: boolean,
-): URL {
-  // Bundling emits the standalone module at the virtual filesystem root while
-  // compile.include keeps the logo at its repository-relative assets path.
-  const path = standalone ? "./assets/distil-logo.png" : "../assets/distil-logo.png";
-  return new URL(path, moduleUrl);
-}
-
-const DISTIL_LOGO = Deno.readFileSync(
-  distilLogoUrl(import.meta.url, Deno.build.standalone),
-);
+const DISTIL_LOGO = new Uint8Array(readFileSync(logoPath));
 
 export interface WebDependencies {
   config: Config;
@@ -44,10 +35,7 @@ export interface WebDependencies {
   persistConfig?: (config: Config) => Promise<void>;
   getEnv?: (name: string) => string | undefined;
   historyDirectory?: string;
-  collect?: (
-    days: number,
-    options: WebCollectionOptions,
-  ) => Promise<CollectionResult>;
+  collect?: (days: number, options: WebCollectionOptions) => Promise<CollectionResult>;
   selector?: SelectionPipeline;
   selectorFactory?: (config: Config) => SelectionPipeline;
   ensureProvider?: (config: LlmConfig) => Promise<void>;
@@ -128,18 +116,21 @@ export class DistilWebApp {
       throw new Error("A web chat client or client factory is required");
     }
     this.#clientFactory = dependencies.clientFactory ?? (() => dependencies.client!);
-    this.#persistConfig = dependencies.persistConfig ??
+    this.#persistConfig =
+      dependencies.persistConfig ??
       ((config) => saveConfig(dependencies.configPath ?? "config.toml", config));
-    this.#getEnv = dependencies.getEnv ?? ((name) => Deno.env.get(name));
+    this.#getEnv = dependencies.getEnv ?? ((name) => process.env[name]);
     this.#historyDirectory = dependencies.historyDirectory ?? "history";
-    this.#collect = dependencies.collect ??
+    this.#collect =
+      dependencies.collect ??
       ((days, options) =>
         collectContent(this.#config.feeds, {
           daysBack: days,
           signal: options.signal,
           onProgress: options.onProgress,
         }));
-    this.#selectorFactory = dependencies.selectorFactory ??
+    this.#selectorFactory =
+      dependencies.selectorFactory ??
       (dependencies.selector
         ? () => dependencies.selector!
         : (config) => new ContentSelector(config.decision, config.domain.focus));
@@ -152,18 +143,22 @@ export class DistilWebApp {
     const url = new URL(request.url);
     try {
       if (
-        (request.method === "POST" || request.method === "PUT" ||
-          request.method === "PATCH" || request.method === "DELETE") &&
+        (request.method === "POST" ||
+          request.method === "PUT" ||
+          request.method === "PATCH" ||
+          request.method === "DELETE") &&
         request.headers.has("origin") &&
         request.headers.get("origin") !== url.origin
       ) {
         return json({ error: "Cross-origin requests are not allowed" }, 403);
       }
       if (request.method === "GET" && url.pathname === "/") {
-        return html(homePage({
-          configured: this.#configured,
-          issue: this.#configurationIssue,
-        }));
+        return html(
+          homePage({
+            configured: this.#configured,
+            issue: this.#configurationIssue,
+          }),
+        );
       }
       if (request.method === "GET" && url.pathname === "/settings") {
         return html(settingsPage());
@@ -240,10 +235,13 @@ export class DistilWebApp {
       return json({ error: "Settings are already being saved" }, 409);
     }
     if (this.#fetchJob?.status === "running" || this.#generationInProgress) {
-      return json({
-        error:
-          "Wait for the current fetch or generation to finish before saving settings",
-      }, 409);
+      return json(
+        {
+          error:
+            "Wait for the current fetch or generation to finish before saving settings",
+        },
+        409,
+      );
     }
     this.#configurationSaveInProgress = true;
     try {
@@ -255,10 +253,10 @@ export class DistilWebApp {
       }
       let config: Config;
       try {
-        const value = body && typeof body === "object" && !Array.isArray(body) &&
-            "config" in body
-          ? (body as { config: unknown }).config
-          : body;
+        const value =
+          body && typeof body === "object" && !Array.isArray(body) && "config" in body
+            ? (body as { config: unknown }).config
+            : body;
         config = normalizeEditableConfig(value);
       } catch (error) {
         return json({ error: message(error) }, 400);
@@ -285,10 +283,13 @@ export class DistilWebApp {
       return json({ error: "Complete setup in Settings before fetching content" }, 409);
     }
     if (this.#fetchJob?.status === "running") {
-      return json({
-        ...this.#fetchSnapshot(),
-        error: "A fetch is already running",
-      }, 409);
+      return json(
+        {
+          ...this.#fetchSnapshot(),
+          error: "A fetch is already running",
+        },
+        409,
+      );
     }
     let options: { days: number; includeSeen: boolean };
     try {
@@ -349,8 +350,7 @@ export class DistilWebApp {
         stage: "selecting",
         completed: selection.items.length,
         total: selection.items.length,
-        message:
-          `Fetch complete: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
+        message: `Fetch complete: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
       });
     } catch (error) {
       if (this.#fetchJob !== job) return;
@@ -401,9 +401,7 @@ export class DistilWebApp {
 
   async #handleSelectionResolution(request: Request): Promise<Response> {
     const job = this.#fetchJob;
-    if (
-      job?.status !== "complete" || !job.collection || !this.#cachedSelection
-    ) {
+    if (job?.status !== "complete" || !job.collection || !this.#cachedSelection) {
       return json({ error: "No completed fetch is available for review" }, 409);
     }
 
@@ -418,11 +416,7 @@ export class DistilWebApp {
       const policy = resolution.selected ? "include" : "exclude";
       const selection = resolution.all
         ? resolveAllPending(this.#cachedSelection, policy)
-        : resolvePendingSelection(
-          this.#cachedSelection,
-          resolution.fingerprint,
-          policy,
-        );
+        : resolvePendingSelection(this.#cachedSelection, resolution.fingerprint, policy);
       this.#cachedSelection = selection;
       this.#cachedItems = selection.selected;
       job.result = fetchPayload(job.collection, selection);
@@ -430,8 +424,7 @@ export class DistilWebApp {
         stage: "selecting",
         completed: selection.items.length,
         total: selection.items.length,
-        message:
-          `Review updated: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
+        message: `Review updated: ${job.result.selectedCount} included, ${job.result.skippedCount} skipped, ${job.result.unresolvedCount} require review`,
       });
       return json(this.#fetchSnapshot());
     } catch (error) {
@@ -449,14 +442,20 @@ export class DistilWebApp {
     }
     const unresolved = unresolvedSelections(selection).length;
     if (unresolved > 0) {
-      return json({
-        error: `Resolve ${unresolved} item(s) requiring review before generation.`,
-      }, 409);
+      return json(
+        {
+          error: `Resolve ${unresolved} item(s) requiring review before generation.`,
+        },
+        409,
+      );
     }
     if (this.#cachedItems.length === 0) {
-      return json({
-        error: "No items are included. Include at least one item before generation.",
-      }, 409);
+      return json(
+        {
+          error: "No items are included. Include at least one item before generation.",
+        },
+        409,
+      );
     }
     if (this.#generationInProgress) {
       return json({ error: "A generation is already running" }, 409);
@@ -501,14 +500,12 @@ export class DistilWebApp {
     try {
       await this.#ensureProvider(this.#config.llm);
       const client = this.#clientFactory(this.#config.llm);
-      for await (
-        const chunk of streamDistil(client, items, {
-          domain: this.#config.domain.focus,
-          readingTimeMinutes: this.#config.output.readingTimeMinutes,
-          signal,
-          onStage: (message) => emit("stage", { message }),
-        })
-      ) {
+      for await (const chunk of streamDistil(client, items, {
+        domain: this.#config.domain.focus,
+        readingTimeMinutes: this.#config.output.readingTimeMinutes,
+        signal,
+        onStage: (message) => emit("stage", { message }),
+      })) {
         content += chunk;
         emit("content", { content: chunk });
       }
@@ -551,7 +548,7 @@ export class DistilWebApp {
       const content = await readDigest(this.#historyDirectory, filename);
       return html(viewPage(filename, content));
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) return html(notFoundPage(), 404);
+      if (hasErrorCode(error, "ENOENT")) return html(notFoundPage(), 404);
       if (error instanceof Error && error.message === "Invalid digest filename") {
         return json({ error: error.message }, 400);
       }
@@ -565,14 +562,30 @@ export function startServer(
   options: {
     hostname?: string;
     port?: number;
-    onListen?: (address: Deno.NetAddr) => void;
+    onListen?: (address: { hostname: string; port: number }) => void;
   } = {},
-): Deno.HttpServer {
-  return Deno.serve({
+): Bun.Server {
+  const server = Bun.serve({
     hostname: options.hostname ?? "127.0.0.1",
     port: options.port ?? 5001,
-    onListen: options.onListen,
-  }, app.handler);
+    development: false,
+    fetch(request, server) {
+      return handleServerRequest(app, request, server);
+    },
+  });
+  options.onListen?.({ hostname: server.hostname ?? "127.0.0.1", port: server.port! });
+  return server;
+}
+
+export function handleServerRequest(
+  app: DistilWebApp,
+  request: Request,
+  server: Pick<Bun.Server, "timeout">,
+): Promise<Response> {
+  if (request.method === "POST" && new URL(request.url).pathname === "/api/generate") {
+    server.timeout(request, 0);
+  }
+  return app.handler(request);
 }
 
 async function requestFetchOptions(
@@ -580,7 +593,7 @@ async function requestFetchOptions(
 ): Promise<{ days: number; includeSeen: boolean }> {
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const body = await request.json() as { days?: unknown; includeSeen?: unknown };
+    const body = (await request.json()) as { days?: unknown; includeSeen?: unknown };
     if (body.includeSeen !== undefined && typeof body.includeSeen !== "boolean") {
       throw new Error("includeSeen must be a boolean");
     }
@@ -617,9 +630,7 @@ async function requestSelectionResolution(
   }
   if (body.all === true) return { selected: body.selected, all: true };
   const fingerprint = body.fingerprint;
-  if (
-    typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)
-  ) {
+  if (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
     throw new Error("fingerprint must be a lowercase SHA-256 value");
   }
   return { selected: body.selected, all: false, fingerprint };
@@ -637,10 +648,9 @@ function fetchPayload(
     itemCount: selection.selected.length,
     fetchedCount: result.items.length,
     selectedCount: selection.selected.length,
-    skippedCount:
-      selection.items.filter((entry) =>
-        !entry.selected && entry.kind !== "review" && entry.kind !== "fallback"
-      ).length,
+    skippedCount: selection.items.filter(
+      (entry) => !entry.selected && entry.kind !== "review" && entry.kind !== "fallback",
+    ).length,
     unresolvedCount: unresolvedSelections(selection).length,
     warning: selection.warning,
     items: selection.items.map((entry) => ({

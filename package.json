@@ -1,0 +1,16 @@
+{
+  "name": "@distil/cli",
+  "version": "0.3.1",
+  "private": true,
+  "type": "module",
+  "exports": "./src/main.ts",
+  "scripts": {
+    "distil": "bun --no-env-file src/main.ts",
+    "check": "bun fmt --check && bun lint && bun --check && bun test --check",
+    "test": "bun test --check",
+    "compile": "bun build --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile distil-bin src/main.ts"
+  },
+  "engines": {
+    "bun": ">=1.4.3"
+  }
+}

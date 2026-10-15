@@ -1,0 +1,11 @@
+env = false
+
+[fmt]
+printWidth = 90
+tabWidth = 2
+semi = true
+singleQuote = false
+ignorePatterns = ["config.toml"]
+
+[test]
+root = "tests"

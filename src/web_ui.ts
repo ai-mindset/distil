@@ -1,14 +1,16 @@
 export function homePage(
   configuration: { configured: boolean; issue?: string } = { configured: true },
 ): string {
-  const setupNotice = configuration.configured ? "" : [
-    '<section class="card notice" role="status">',
-    "<h2>Finish setting up Distil</h2>",
-    `<p>${escapeHtml(configuration.issue ?? "No saved configuration was found.")}</p>`,
-    "<p>Choose your research topic, AI provider, and sources before collecting items.</p>",
-    '<a class="button-link" href="/settings">Open settings</a>',
-    "</section>",
-  ].join("\n");
+  const setupNotice = configuration.configured
+    ? ""
+    : [
+        '<section class="card notice" role="status">',
+        "<h2>Finish setting up Distil</h2>",
+        `<p>${escapeHtml(configuration.issue ?? "No saved configuration was found.")}</p>`,
+        "<p>Choose your research topic, AI provider, and sources before collecting items.</p>",
+        '<a class="button-link" href="/settings">Open settings</a>',
+        "</section>",
+      ].join("\n");
   return page(
     "Distil",
     [
@@ -123,13 +125,15 @@ export function settingsPage(): string {
 }
 
 export function historyPage(files: string[]): string {
-  const list = files.length === 0
-    ? "<p>No digests yet.</p>"
-    : `<ul>${
-      files.map((file) =>
-        `<li><a href="/history/${encodeURIComponent(file)}">${escapeHtml(file)}</a></li>`
-      ).join("")
-    }</ul>`;
+  const list =
+    files.length === 0
+      ? "<p>No digests yet.</p>"
+      : `<ul>${files
+          .map(
+            (file) =>
+              `<li><a href="/history/${encodeURIComponent(file)}">${escapeHtml(file)}</a></li>`,
+          )
+          .join("")}</ul>`;
   return page(
     "History · Distil",
     [
@@ -208,14 +212,17 @@ function brandLink(): string {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) =>
-    ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    })[character]!);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character]!,
+  );
 }
 
 const CSS = String.raw`
