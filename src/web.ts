@@ -672,6 +672,7 @@ function html(content: string, status = 200): Response {
   return new Response(content, {
     status,
     headers: responseHeaders({
+      "cache-control": "no-store",
       "content-type": "text/html; charset=utf-8",
     }),
   });

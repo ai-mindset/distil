@@ -3,6 +3,7 @@ import { test } from "bun:test";
 import type { ChatClient, ChatMessage, Config, ContentItem } from "../src/types.ts";
 import { editableConfig, setupConfig } from "../src/config.ts";
 import { DistilWebApp, handleServerRequest } from "../src/web.ts";
+import { historyPage, viewPage } from "../src/web_ui.ts";
 import type { SelectionPipeline, SelectionResult } from "../src/selection.ts";
 import { assertEquals, assertMatch } from "./assert.ts";
 
@@ -397,13 +398,12 @@ test("web settings recover first-run setup and apply a validated configuration",
     assertMatch(settingsHtml, /Ollama on this computer/);
     assertMatch(settingsHtml, /Add another source/);
     assertMatch(settingsHtml, /The key itself is never saved/);
+    assertMatch(settingsHtml, /Service URL <span class="hint">loopback only<\/span>/);
     assertMatch(
       settingsHtml,
-      /\.switch-row input \{ flex:0 0 1rem; width:1rem; height:1rem; margin:\.25rem 0 0;\s+padding:0;/,
+      /\.switch-row input \{ flex:0 0 1rem; width:1rem; height:1rem; min-height:1rem;\s+margin:\.25rem 0 0; padding:0;/,
     );
-    const settingsScript = settingsHtml.match(/<script>([\s\S]+)<\/script>/)?.[1];
-    if (!settingsScript) throw new Error("settings page script was missing");
-    new Function(settingsScript);
+    assertPageScriptsCompile(settingsHtml);
 
     const initial = await (
       await app.handler(new Request("http://localhost/api/config"))
@@ -448,18 +448,39 @@ test("home page includes security headers and accessible controls", async () => 
   const response = await app.handler(new Request("http://localhost/"));
   const content = await response.text();
   assertEquals(response.status, 200);
+  assertEquals(response.headers.get("cache-control"), "no-store");
   assertMatch(response.headers.get("content-security-policy") ?? "", /default-src/);
   assertMatch(content, /aria-live="polite"/);
   assertMatch(content, /data-theme="dark"/);
   assertMatch(content, /data-palette="fasthtml-blue"/);
   assertMatch(content, /<img class="brand-logo"/);
   assertMatch(content, /<link rel="icon"[^>]+distil-logo\.png/);
-  assertMatch(content, /\.brand-heading h1 \{ font-family:Inter/);
+  assertMatch(content, /class="skip-link" href="#main-content"/);
+  assertMatch(content, /<nav class="site-nav" aria-label="Primary">/);
+  assertMatch(content, /href="\/" aria-current="page"/);
+  assertMatch(content, /aria-label="Dark theme" aria-pressed="true"/);
+  assertMatch(content, /prefers-color-scheme: dark/);
+  assertMatch(content, /prefers-reduced-motion:no-preference/);
+  assertMatch(content, /button:focus-visible,input:focus-visible/);
+  assertMatch(content, /@media \(max-width:520px\)/);
+  assertMatch(content, /overflow-wrap:anywhere/);
   assertMatch(content, /--blue-600:#2563eb/);
   assertMatch(content, /--blue-500:#3b82f6/);
   assertMatch(content, /--blue-400:#60a5fa/);
-  assertMatch(content, /--bg:#111827/);
-  assertMatch(content, /--card:#1f2937/);
+  assertMatch(content, /--bg:#0f172a/);
+  assertMatch(content, /--card:#1e293b/);
+  assertMatch(content, /aria-label="Digest workflow"/);
+  assertMatch(content, /id="workflow-collect"[^>]+current/);
+  assertMatch(content, /id="workflow-review"[^>]+blocked/);
+  assertMatch(content, /id="workflow-generate"[^>]+blocked/);
+  assertMatch(content, /id="collect-panel"/);
+  assertMatch(content, /id="review-panel"/);
+  assertMatch(content, /id="generate-panel"/);
+  assertMatch(content, /setWorkflowStep\("review", "current"/);
+  assertMatch(content, /id="fetch-items" type="button"/);
+  assertEquals(content.includes('id="fetch"'), false);
+  assertMatch(content, /window\.fetch\("\/api\/fetch"/);
+  assertMatch(content, /fetchStatus\.textContent = "Starting collection\\u2026"/);
   assertMatch(content, /Feed health/);
   assertMatch(content, /Stop and reset/);
   assertMatch(content, /id="generate-progress"/);
@@ -470,21 +491,55 @@ test("home page includes security headers and accessible controls", async () => 
   assertMatch(content, /\/api\/fetch\/status/);
   assertMatch(content, /\/api\/fetch\/selection/);
   assertMatch(content, /details\[data-source\]\[open\]/);
-  assertMatch(content, /details\.open = openSources\.has\(source\)/);
+  assertMatch(content, /details\.open = openSources\.has\(source\).*hasUnresolved/);
+  assertMatch(content, /className = "decision-list"/);
+  assertMatch(content, /button\.setAttribute\("aria-label", label \+ ": " \+ title\)/);
+  assertMatch(content, /new Intl\.DateTimeFormat/);
   assertMatch(content, /review: \{ label: "Review", icon: "\?"/);
   assertMatch(content, /fallback: \{ label: "Fallback", icon: "!"/);
   assertMatch(content, /seen: \{ label: "Seen"/);
   assertMatch(content, /\.review \.tag,\.fallback \.tag/);
   assertMatch(content, /border-style:dashed/);
   assertMatch(content, /icon\.ariaHidden = "true"/);
-  const script = content.match(/<script>([\s\S]+)<\/script>/)?.[1];
-  if (!script) throw new Error("home page script was missing");
-  new Function(script);
+  assertPageScriptsCompile(content);
 
   const logo = await app.handler(new Request("http://localhost/assets/distil-logo.png"));
   assertEquals(logo.status, 200);
   assertEquals(logo.headers.get("content-type"), "image/png");
   assertEquals((await logo.arrayBuffer()).byteLength > 1_000, true);
+});
+
+test("history and digest pages provide a consistent, safe reading experience", () => {
+  const filename = "distil-2026-10-08_120000Z.md";
+  const history = historyPage([filename]);
+  assertMatch(history, /href="\/history" aria-current="page"/);
+  assertMatch(history, /class="history-card"/);
+  assertMatch(history, /Digest from October 8, 2026/);
+  assertMatch(history, /<time datetime="2026-10-08T12:00:00Z">/);
+  assertMatch(history, /id="theme"/);
+
+  const digest = viewPage(
+    filename,
+    [
+      "# Main finding",
+      "",
+      "A **clear** result with [evidence](https://example.com/report?a=1&b=2).",
+      "",
+      "- First point",
+      "- Second point",
+      "",
+      "<script>alert('unsafe')</script>",
+    ].join("\n"),
+  );
+  assertMatch(digest, /<article class="digest">/);
+  assertMatch(digest, /<h2>Main finding<\/h2>/);
+  assertMatch(digest, /<strong>clear<\/strong>/);
+  assertMatch(digest, /<ul><li>First point<\/li><li>Second point<\/li><\/ul>/);
+  assertMatch(digest, /href="https:\/\/example\.com\/report\?a=1&amp;b=2"/);
+  assertMatch(digest, /&lt;script&gt;alert\(&#39;unsafe&#39;\)&lt;\/script&gt;/);
+  assertEquals(digest.includes("<script>alert('unsafe')</script>"), false);
+  assertMatch(digest, /<summary>View raw Markdown<\/summary>/);
+  assertPageScriptsCompile(digest);
 });
 
 interface CompletedFetchState {
@@ -497,6 +552,12 @@ interface CompletedFetchState {
     unresolvedCount: number;
     items: Array<{ kind: string; reason: string }>;
   };
+}
+
+function assertPageScriptsCompile(html: string): void {
+  const scripts = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g));
+  if (scripts.length === 0) throw new Error("page script was missing");
+  for (const script of scripts) new Function(script[1]);
 }
 
 function resolveSelection(
