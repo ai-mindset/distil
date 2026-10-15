@@ -6,7 +6,9 @@
   "exports": "./src/main.ts",
   "scripts": {
     "distil": "bun --no-env-file src/main.ts",
-    "check": "bun fmt --check && bun lint && bun --check && bun test --check",
+    "quality": "bun fmt --check && bun lint",
+    "verify": "bun --check && bun test --check",
+    "check": "bun run quality && bun run verify",
     "test": "bun test --check",
     "compile": "bun build --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile distil-bin src/main.ts"
   },

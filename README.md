@@ -224,7 +224,11 @@ attestations, and publishes the archives without overwriting an existing release
 
     bun run check
 
-The check task checks formatting, lints, type-checks, and runs the full deterministic test suite.
+The check task checks formatting, lints, type-checks, and runs the full deterministic test
+suite. Formatting and linting require Bun's newer built-in `fmt` and `lint` commands; CI
+uses the canary tooling channel while runtime verification and release builds stay on
+stable Bun 1.4.3. Run `bun run verify` when only stable Bun is available.
+
 Tests mock network, LLM, and Ollama boundaries; they do not spend API credits or download
 models. The web server binds to loopback by default and has no authentication. Do not
 expose it publicly without adding an authentication and authorization design.
