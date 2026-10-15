@@ -216,7 +216,7 @@ Bun `--target`. Each release artifact is smoke-tested on its target platform. Th
 embeds the UI logo and does not load `.env` or `bunfig.toml` automatically.
 
 Tagged releases build and smoke-test Bun archives for Linux x86-64, macOS ARM64, and
-Windows x86-64. Create a tag matching the version in `package.json`, such as `v0.3.1`; the
+Windows x86-64. Create a tag matching the version in `package.json`, such as `v0.4.0`; the
 release workflow verifies the tag, generates SHA-256 checksums and provenance
 attestations, and publishes the archives without overwriting an existing release.
 
