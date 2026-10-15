@@ -108,11 +108,7 @@ async function finalMessages(
       { role: "system", content: system },
       {
         role: "user",
-        content: buildDistilPrompt(
-          items,
-          options.readingTimeMinutes,
-          options.domain,
-        ),
+        content: buildDistilPrompt(items, options.readingTimeMinutes, options.domain),
       },
     ];
   }

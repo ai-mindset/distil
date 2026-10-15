@@ -11,41 +11,69 @@ permissions:
   contents: read
 
 env:
-  DENO_VERSION: v2.9.7
+  BUN_RUNTIME_VERSION: 1.4.3
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run quality
+
   linux:
+    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: ${{ env.DENO_VERSION }}
-      - run: deno task check
-      - name: Compile QuickJS executable
+          bun-version: ${{ env.BUN_RUNTIME_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run verify
+      - name: Compile Bun executable
         run: |
           mkdir -p dist
-          deno compile \
-            --engine quickjs \
-            --bundle \
-            --minify \
-            --allow-read \
-            --allow-write \
-            --allow-net \
-            --allow-env \
-            --allow-run \
-            --target x86_64-unknown-linux-gnu \
-            --output dist/distil \
+          bun build --compile --minify --no-compile-autoload-dotenv \
+            --no-compile-autoload-bunfig \
+            --target=bun-linux-x64 \
+            --outfile dist/distil \
             src/main.ts
       - name: Smoke-test executable
         run: |
-          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          version="$(bun -e 'console.log(require("./package.json").version)')"
           test "$(dist/distil --version)" = "distil ${version}"
           dist/distil --help
+          dist/distil serve --config /tmp/distil-smoke-missing.toml \
+            --host 127.0.0.1 --port 51571 --no-browser > /tmp/distil-smoke.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in {1..40}; do
+            if curl -fsS http://127.0.0.1:51571/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat /tmp/distil-smoke.log
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:51571/assets/distil-logo.png \
+            -o /tmp/distil-smoke-logo.png
+          cmp assets/distil-logo.png /tmp/distil-smoke-logo.png
       - name: Package release archive
         run: |
-          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          version="$(bun -e 'console.log(require("./package.json").version)')"
           name="distil-v${version}-linux-x86_64"
           package="dist/release/${name}"
           mkdir -p "$package"
@@ -60,37 +88,33 @@ jobs:
           if-no-files-found: error
 
   macos:
+    needs: quality
     runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: ${{ env.DENO_VERSION }}
-      - run: deno task check
-      - name: Compile QuickJS executable
+          bun-version: ${{ env.BUN_RUNTIME_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run verify
+      - name: Compile Bun executable
         run: |
           mkdir -p dist
-          deno compile \
-            --engine quickjs \
-            --bundle \
-            --minify \
-            --allow-read \
-            --allow-write \
-            --allow-net \
-            --allow-env \
-            --allow-run \
-            --target aarch64-apple-darwin \
-            --output dist/distil \
+          bun build --compile --minify --no-compile-autoload-dotenv \
+            --no-compile-autoload-bunfig \
+            --target=bun-darwin-arm64 \
+            --outfile dist/distil \
             src/main.ts
       - name: Smoke-test executable
         run: |
-          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          version="$(bun -e 'console.log(require("./package.json").version)')"
           test "$(dist/distil --version)" = "distil ${version}"
           dist/distil --help
       - name: Package release archive
         run: |
-          version="$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+          version="$(bun -e 'console.log(require("./package.json").version)')"
           name="distil-v${version}-macos-aarch64"
           package="dist/release/${name}"
           mkdir -p "$package"
@@ -105,43 +129,39 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: quality
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: ${{ env.DENO_VERSION }}
-      - run: deno task check
-      - name: Compile QuickJS executable
+          bun-version: ${{ env.BUN_RUNTIME_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run verify
+      - name: Compile Bun executable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force "dist" | Out-Null
-          deno compile `
-            --engine quickjs `
-            --bundle `
-            --minify `
-            --allow-read `
-            --allow-write `
-            --allow-net `
-            --allow-env `
-            --allow-run `
-            --target x86_64-pc-windows-msvc `
-            --output dist/distil.exe `
+          bun build --compile --minify --no-compile-autoload-dotenv `
+            --no-compile-autoload-bunfig `
+            --target=bun-windows-x64 `
+            --outfile dist/distil.exe `
             src/main.ts
       - name: Smoke-test executable
         shell: pwsh
         run: |
-          $version = (Get-Content "deno.json" -Raw | ConvertFrom-Json).version
+          $version = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
           $actual = & "dist/distil.exe" --version
           if ($actual -ne "distil $version") {
-            throw "Compiled version '$actual' does not match deno.json version '$version'"
+            throw "Compiled version '$actual' does not match package.json version '$version'"
           }
           & "dist/distil.exe" --help
       - name: Package release archive
         shell: pwsh
         run: |
-          $version = (Get-Content "deno.json" -Raw | ConvertFrom-Json).version
+          $version = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
           $name = "distil-v$version-windows-x86_64"
           $package = Join-Path "dist/release" $name
           New-Item -ItemType Directory -Force $package | Out-Null
@@ -173,10 +193,10 @@ jobs:
       - name: Validate release tag
         shell: bash
         run: |
-          version="$(jq -r '.version' deno.json)"
+          version="$(jq -r '.version' package.json)"
           expected="v${version}"
           if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
-            echo "::error::Release tag $GITHUB_REF_NAME must match deno.json version $expected"
+            echo "::error::Release tag $GITHUB_REF_NAME must match package.json version $expected"
             exit 1
           fi
 

@@ -1,3 +1,4 @@
+import { test } from "bun:test";
 import { ensureOllamaReady, isLoopbackUrl } from "../src/ollama.ts";
 import type { LlmConfig } from "../src/types.ts";
 import { assert, assertEquals, assertRejects } from "./assert.ts";
@@ -11,7 +12,7 @@ const config: LlmConfig = {
   retries: 0,
 };
 
-Deno.test("starts Ollama and pulls a missing model", async () => {
+test("starts Ollama and pulls a missing model", async () => {
   let running = false;
   let starts = 0;
   const pulled: string[] = [];
@@ -36,7 +37,7 @@ Deno.test("starts Ollama and pulls a missing model", async () => {
   assertEquals(pulled, ["qwen2.5:3b"]);
 });
 
-Deno.test("does not pull an existing latest-tag model", async () => {
+test("does not pull an existing latest-tag model", async () => {
   let pulled = false;
   await ensureOllamaReady(config, {
     pullModel: () => {
@@ -48,35 +49,38 @@ Deno.test("does not pull an existing latest-tag model", async () => {
   assert(!pulled);
 });
 
-Deno.test("verifies unmanaged Ollama without running local commands", async () => {
+test("verifies unmanaged Ollama without running local commands", async () => {
   let fetched = false;
   let started = false;
   let pulled = false;
-  await ensureOllamaReady({
-    ...config,
-    baseUrl: "http://ollama.lan:11434/v1",
-    manageLocal: false,
-  }, {
-    fetcher: () => {
-      fetched = true;
-      return Promise.resolve(Response.json({ models: [{ name: "qwen2.5:3b" }] }));
+  await ensureOllamaReady(
+    {
+      ...config,
+      baseUrl: "http://ollama.lan:11434/v1",
+      manageLocal: false,
     },
-    startServer: () => {
-      started = true;
-      return Promise.resolve();
+    {
+      fetcher: () => {
+        fetched = true;
+        return Promise.resolve(Response.json({ models: [{ name: "qwen2.5:3b" }] }));
+      },
+      startServer: () => {
+        started = true;
+        return Promise.resolve();
+      },
+      pullModel: () => {
+        pulled = true;
+        return Promise.resolve();
+      },
     },
-    pullModel: () => {
-      pulled = true;
-      return Promise.resolve();
-    },
-  });
+  );
   assert(fetched);
   assert(!started);
   assert(!pulled);
   assert(isLoopbackUrl("http://localhost:11434/v1"));
 });
 
-Deno.test("reports unavailable or incomplete unmanaged Ollama endpoints", async () => {
+test("reports unavailable or incomplete unmanaged Ollama endpoints", async () => {
   const unmanaged = { ...config, manageLocal: false };
   let started = false;
   await assertRejects(

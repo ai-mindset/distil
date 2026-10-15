@@ -1,7 +1,8 @@
+import { test } from "bun:test";
 import { child, children, nodeText, parseXml, textFromHtml } from "../src/xml.ts";
 import { assertEquals, assertRejects } from "./assert.ts";
 
-Deno.test("parses namespaced XML, CDATA, attributes, and entities", () => {
+test("parses namespaced XML, CDATA, attributes, and entities", () => {
   const root = parseXml(`
     <?xml version="1.0"?>
     <feed xmlns:a="urn:test">
@@ -16,12 +17,12 @@ Deno.test("parses namespaced XML, CDATA, attributes, and entities", () => {
   assertEquals(nodeText(child(entries[1], "title")), "Fish & Chips");
 });
 
-Deno.test("rejects doctypes and malformed nesting", async () => {
+test("rejects doctypes and malformed nesting", async () => {
   await assertRejects(() => parseXml("<!DOCTYPE x><x/>"), /DOCTYPE/);
   await assertRejects(() => parseXml("<x><y></x>"), /unexpected closing tag/);
 });
 
-Deno.test("turns HTML summaries into compact plain text", () => {
+test("turns HTML summaries into compact plain text", () => {
   assertEquals(
     textFromHtml("<p>Hello&nbsp; <strong>world</strong></p><script>bad()</script>"),
     "Hello world",

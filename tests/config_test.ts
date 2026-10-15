@@ -1,3 +1,6 @@
+import { writeFile } from "node:fs/promises";
+import { makeTempDir, removeTempDir } from "./temp.ts";
+import { test } from "bun:test";
 import {
   editableConfig,
   formatConfig,
@@ -10,7 +13,7 @@ import {
 } from "../src/config.ts";
 import { assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
-Deno.test("parses and normalizes the existing TOML shape", () => {
+test("parses and normalizes the existing TOML shape", () => {
   const raw = parseToml(`
     [llm]
     model = "ollama/qwen2.5:3b" # legacy model syntax
@@ -42,8 +45,9 @@ Deno.test("parses and normalizes the existing TOML shape", () => {
   assertEquals(config.feeds[0].keywords, ["drug", "protein"]);
 });
 
-Deno.test("configures a loopback Strands decision service", () => {
-  const config = normalizeConfig(parseToml(`
+test("configures a loopback Strands decision service", () => {
+  const config = normalizeConfig(
+    parseToml(`
     [decision]
     enabled = true
     base_url = "http://localhost:8099/"
@@ -52,7 +56,8 @@ Deno.test("configures a loopback Strands decision service", () => {
 
     [[feeds]]
     url = "https://example.com/feed.xml"
-  `));
+  `),
+  );
 
   assertEquals(config.decision.enabled, true);
   assertEquals(config.decision.baseUrl, "http://localhost:8099");
@@ -60,8 +65,9 @@ Deno.test("configures a loopback Strands decision service", () => {
   assertEquals(config.decision.timeoutMs, 3_000);
 });
 
-Deno.test("configures Mistral through the OpenAI-compatible transport", () => {
-  const config = normalizeConfig(parseToml(`
+test("configures Mistral through the OpenAI-compatible transport", () => {
+  const config = normalizeConfig(
+    parseToml(`
     [llm]
     provider = "openai"
     model = "mistral-small-latest"
@@ -69,7 +75,8 @@ Deno.test("configures Mistral through the OpenAI-compatible transport", () => {
 
     [[feeds]]
     url = "https://example.com/feed.xml"
-  `));
+  `),
+  );
 
   assertEquals(config.llm.baseUrl, "https://api.mistral.ai/v1");
   assertEquals(config.llm.apiKeyEnv, "MISTRAL_API_KEY");
@@ -77,8 +84,9 @@ Deno.test("configures Mistral through the OpenAI-compatible transport", () => {
   assertEquals(config.llm.manageLocal, false);
 });
 
-Deno.test("does not manage a tunneled Ollama endpoint locally", () => {
-  const config = normalizeConfig(parseToml(`
+test("does not manage a tunneled Ollama endpoint locally", () => {
+  const config = normalizeConfig(
+    parseToml(`
     [llm]
     provider = "ollama"
     model = "qwen2.5:3b"
@@ -87,77 +95,89 @@ Deno.test("does not manage a tunneled Ollama endpoint locally", () => {
 
     [[feeds]]
     url = "https://example.com/feed.xml"
-  `));
+  `),
+  );
 
   assertEquals(config.llm.manageLocal, false);
 });
 
-Deno.test("detects YouTube feeds and validates regex patterns", async () => {
-  const youtube = normalizeConfig(parseToml(`
+test("detects YouTube feeds and validates regex patterns", async () => {
+  const youtube = normalizeConfig(
+    parseToml(`
     [[feeds]]
     url = "https://www.youtube.com/@example"
     pattern = "research|science"
-  `));
+  `),
+  );
   assertEquals(youtube.feeds[0].type, "youtube");
 
   await assertRejects(
     () =>
-      normalizeConfig(parseToml(`
+      normalizeConfig(
+        parseToml(`
         [[feeds]]
         url = "https://example.com/rss"
         pattern = "["
-      `)),
+      `),
+      ),
     /not a valid regular expression/,
   );
 });
 
-Deno.test("rejects non-http feed URLs", async () => {
+test("rejects non-http feed URLs", async () => {
   await assertRejects(
     () => normalizeConfig(parseToml('[[feeds]]\nurl = "file:///etc/passwd"')),
     /must use http or https/,
   );
 });
 
-Deno.test("rejects remote or invalid decision services", async () => {
+test("rejects remote or invalid decision services", async () => {
   await assertRejects(
     () =>
-      normalizeConfig(parseToml(`
+      normalizeConfig(
+        parseToml(`
         [decision]
         base_url = "https://decider.example"
         [[feeds]]
         url = "https://example.com/rss"
-      `)),
+      `),
+      ),
     /loopback host/,
   );
   await assertRejects(
     () =>
-      normalizeConfig(parseToml(`
+      normalizeConfig(
+        parseToml(`
         [decision]
         confidence_threshold = 1.1
         [[feeds]]
         url = "https://example.com/rss"
-      `)),
+      `),
+      ),
     /between 0 and 1/,
   );
 });
 
-Deno.test("rejects local Ollama management for a remote URL", async () => {
+test("rejects local Ollama management for a remote URL", async () => {
   await assertRejects(
     () =>
-      normalizeConfig(parseToml(`
+      normalizeConfig(
+        parseToml(`
         [llm]
         provider = "ollama"
         base_url = "http://ollama.lan:11434/v1"
         manage_local = true
         [[feeds]]
         url = "https://example.com/rss"
-      `)),
+      `),
+      ),
     /requires a loopback Ollama endpoint/,
   );
 });
 
-Deno.test("round-trips GUI settings through canonical TOML", async () => {
-  const config = normalizeConfig(parseToml(`
+test("round-trips GUI settings through canonical TOML", async () => {
+  const config = normalizeConfig(
+    parseToml(`
     [llm]
     provider = "openai"
     model = "mistral-small-latest"
@@ -170,32 +190,33 @@ Deno.test("round-trips GUI settings through canonical TOML", async () => {
 
     [[feeds]]
     url = "https://example.com/feed.xml"
-    name = "Example \\\"Research\\\""
+    name = "Example \\"Research\\""
     keywords = ["drug", "protein"]
-  `));
+  `),
+  );
   const edited = normalizeEditableConfig(editableConfig(config));
   assertEquals(edited, config);
   assertEquals(normalizeConfig(parseToml(formatConfig(config))), config);
 
-  const directory = await Deno.makeTempDir();
+  const directory = await makeTempDir();
   const path = `${directory}/config.toml`;
   try {
-    await Deno.writeTextFile(path, "old content");
+    await writeFile(path, "old content");
     await saveConfig(path, config);
     assertEquals(await loadConfig(path), config);
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await removeTempDir(directory);
   }
 });
 
-Deno.test("web configuration falls back to an editable setup when the file is missing", async () => {
-  const directory = await Deno.makeTempDir();
+test("web configuration falls back to an editable setup when the file is missing", async () => {
+  const directory = await makeTempDir();
   try {
     const result = await loadConfigForWeb(`${directory}/missing.toml`);
     assertMatch(result.issue ?? "", /Config file not found/);
     assertEquals(result.config.domain.focus, "");
     assertEquals(result.config.feeds, []);
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await removeTempDir(directory);
   }
 });

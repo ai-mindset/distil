@@ -8,13 +8,13 @@ Distil collects recent RSS, Atom, and YouTube content, filters it for relevance,
 produces a concise Markdown research digest with Ollama or any OpenAI-compatible
 chat-completions API, including Mistral and 9Router.
 
-The application is written in TypeScript for Deno. It has no third-party runtime packages:
+The application is written in TypeScript for Bun. It has no third-party runtime packages:
 configuration, feed parsing, CLI handling, web serving, streaming, and tests all use
-repository code or stable Deno APIs.
+repository code, Web APIs, or Bun and Node-compatible built-ins.
 
 ## Requirements
 
-- [Deno 2](https://docs.deno.com/runtime/)
+- [Bun 1.4.3 or newer](https://bun.sh/docs/installation)
 - [Ollama](https://ollama.com/download) for local models, or an API key for a compatible
   hosted provider
 - [Strands Decider](https://github.com/strands-labs/strands-decider) only when optional
@@ -25,13 +25,13 @@ repository code or stable Deno APIs.
 
 With Ollama installed:
 
-    deno task distil setup
-    deno task distil run
+    bun run distil setup
+    bun run distil run
 
 The setup command verifies configured local services. It starts Ollama and pulls its model
 only when `manage_local = true`. To use the local web UI instead:
 
-    deno task distil serve
+    bun run distil serve
 
 The UI listens on `http://127.0.0.1:5001`. Fetching runs as an in-process background job:
 the page reports source and Strands progress, and leaving for history then returning
@@ -154,18 +154,18 @@ measures confidence in its relevance classification; it does not establish the s
 truth, quality, or reproducibility of a source's claims.
 
 Distil does not install or start Strands. When decision selection is enabled,
-`deno task distil setup` verifies that its server is healthy alongside Ollama.
+`bun run distil setup` verifies that its server is healthy alongside Ollama.
 
 Preview selection without calling the generative LLM:
 
-    deno task distil preview --days 7
+    bun run distil preview --days 7
 
 The web UI offers Include and Exclude controls beside every unresolved item, plus explicit
 bulk controls. CLI `run` stops when review is required; after inspecting `preview`, opt in
 to a deterministic bulk decision when appropriate:
 
-    deno task distil run --review-policy=include
-    deno task distil run --review-policy=exclude
+    bun run distil run --review-policy=include
+    bun run distil run --review-policy=exclude
 
 After a digest is saved, Distil records reviewed item fingerprints in
 `.distil/state.json`. Later runs skip them; use `--include-seen` or the web checkbox to
@@ -192,43 +192,43 @@ treated as untrusted data in prompts.
 
 ## Commands
 
-    deno task distil run --days 3
-    deno task distil run --include-seen
-    deno task distil run --review-policy=exclude
-    deno task distil preview --days 7
-    deno task distil run --config custom.toml
-    deno task distil serve --host 127.0.0.1 --port 5001 --no-browser
-    deno task distil setup
-    deno task distil --help
+    bun run distil run --days 3
+    bun run distil run --include-seen
+    bun run distil run --review-policy=exclude
+    bun run distil preview --days 7
+    bun run distil run --config custom.toml
+    bun run distil serve --host 127.0.0.1 --port 5001 --no-browser
+    bun run distil setup
+    bun run distil --help
 
 CLI digests use `[output].directory`; web history uses `history/`. Both use timestamped,
 collision-safe filenames and never silently replace an existing digest. Prompt batches are
 bounded by source-text size rather than a fixed number of items.
 
-To install a global source command:
-
-    deno install --global --name distil --allow-read --allow-write --allow-net --allow-env --allow-run src/main.ts
-
-To build a bundled, minified, self-contained QuickJS executable for the current operating
+To build a bundled, minified, self-contained Bun executable for the current operating
 system and architecture:
 
-    deno task compile
+    bun run compile
 
-The output is `distil-bin`. Native executables are target-specific, so a cross-platform
-release consists of one single-file build per supported Deno `--target`, rather than one
-binary that runs on every operating system. Deno currently labels QuickJS and bundled
-compilation experimental; smoke-test each release artifact on its target platform.
+The output is `distil-bin` (or `distil-bin.exe` on Windows). Native executables are
+target-specific, so a cross-platform release uses one single-file build per supported
+Bun `--target`. Each release artifact is smoke-tested on its target platform. The binary
+embeds the UI logo and does not load `.env` or `bunfig.toml` automatically.
 
-Tagged releases build and smoke-test QuickJS archives for Linux x86-64, macOS ARM64, and
-Windows x86-64. Create a tag matching the version in `deno.json`, such as `v0.3.0`; the
+Tagged releases build and smoke-test Bun archives for Linux x86-64, macOS ARM64, and
+Windows x86-64. Create a tag matching the version in `package.json`, such as `v0.3.1`; the
 release workflow verifies the tag, generates SHA-256 checksums and provenance
 attestations, and publishes the archives without overwriting an existing release.
 
 ## Development
 
-    deno task check
+    bun run check
 
-The check task formats, lints, type-checks, and runs the full deterministic test suite.
+The check task checks formatting, lints, type-checks, and runs the full deterministic test
+suite. Formatting and linting require Bun's newer built-in `fmt` and `lint` commands; CI
+uses the canary tooling channel while runtime verification and release builds stay on
+stable Bun 1.4.3. Run `bun run verify` when only stable Bun is available.
+
 Tests mock network, LLM, and Ollama boundaries; they do not spend API credits or download
 models. The web server binds to loopback by default and has no authentication. Do not
 expose it publicly without adding an authentication and authorization design.

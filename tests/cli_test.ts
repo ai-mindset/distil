@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
+import { test } from "bun:test";
 import { helpText, parseCliArgs, VERSION } from "../src/cli.ts";
 import { assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
-Deno.test("parses run and serve CLI options", () => {
+test("parses run and serve CLI options", () => {
   const run = parseCliArgs([
     "run",
     "--config=custom.toml",
@@ -30,7 +32,7 @@ Deno.test("parses run and serve CLI options", () => {
   assertEquals(serve.browser, false);
 });
 
-Deno.test("rejects unknown and invalid CLI options", async () => {
+test("rejects unknown and invalid CLI options", async () => {
   await assertRejects(() => parseCliArgs(["unknown"]), /Unknown command/);
   await assertRejects(() => parseCliArgs(["run", "--days", "0"]), /between 1 and 3650/);
   await assertRejects(
@@ -47,7 +49,7 @@ Deno.test("rejects unknown and invalid CLI options", async () => {
   );
 });
 
-Deno.test("documents all supported commands", () => {
+test("documents all supported commands", () => {
   const help = helpText();
   assertMatch(help, /distil run/);
   assertMatch(help, /distil preview/);
@@ -56,9 +58,9 @@ Deno.test("documents all supported commands", () => {
   assertMatch(help, /--review-policy/);
 });
 
-Deno.test("reads the CLI version from the package manifest", async () => {
+test("reads the CLI version from the package manifest", async () => {
   const manifest = JSON.parse(
-    await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
   assertEquals(VERSION, manifest.version);
 });

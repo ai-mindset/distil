@@ -1,3 +1,4 @@
+import { test } from "bun:test";
 import {
   collectContent,
   fetchRss,
@@ -10,7 +11,7 @@ import { assert, assertEquals, assertMatch, assertRejects } from "./assert.ts";
 
 const NOW = new Date("2026-10-08T12:00:00Z");
 
-Deno.test("parses RSS and Atom entries", () => {
+test("parses RSS and Atom entries", () => {
   const rss = parseFeed(
     `
     <rss><channel>
@@ -43,7 +44,7 @@ Deno.test("parses RSS and Atom entries", () => {
   assertEquals(atom[0].link, "https://example.com/atom");
 });
 
-Deno.test("filters RSS by date, keywords, regex, and item limit", async () => {
+test("filters RSS by date, keywords, regex, and item limit", async () => {
   const feed: FeedConfig = {
     url: "https://example.com/rss",
     name: "Research",
@@ -69,12 +70,15 @@ Deno.test("filters RSS by date, keywords, regex, and item limit", async () => {
     fetcher: () => Promise.resolve(new Response(xml)),
   });
 
-  assertEquals(result.items.map((item) => item.link), ["https://e/1"]);
+  assertEquals(
+    result.items.map((item) => item.link),
+    ["https://e/1"],
+  );
   assertEquals(result.health.totalEntries, 3);
   assertEquals(result.health.filteredEntries, 1);
 });
 
-Deno.test("reports feed errors without failing the whole collection", async () => {
+test("reports feed errors without failing the whole collection", async () => {
   const feeds: FeedConfig[] = [
     { url: "https://good/rss", name: "Good", type: "rss" },
     { url: "https://bad/rss", name: "Bad", type: "rss" },
@@ -105,7 +109,7 @@ Deno.test("reports feed errors without failing the whole collection", async () =
   assert(progress.some((update) => update.message.includes("Good: success")));
 });
 
-Deno.test("cancels in-flight source requests", async () => {
+test("cancels in-flight source requests", async () => {
   const controller = new AbortController();
   const pending = collectContent(
     [{ url: "https://slow/rss", name: "Slow", type: "rss" }],
@@ -125,7 +129,7 @@ Deno.test("cancels in-flight source requests", async () => {
   await assertRejects(() => pending, /stop now/);
 });
 
-Deno.test("limits concurrent source collection", async () => {
+test("limits concurrent source collection", async () => {
   const feeds: FeedConfig[] = Array.from({ length: 10 }, (_, index) => ({
     url: `https://youtube.com/watch?v=${index}`,
     name: `Video ${index}`,
@@ -146,7 +150,7 @@ Deno.test("limits concurrent source collection", async () => {
   assertEquals(maximum, 4);
 });
 
-Deno.test("rejects oversized feeds without trusting content-length", async () => {
+test("rejects oversized feeds without trusting content-length", async () => {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new Uint8Array(5 * 1024 * 1024 + 1));
@@ -166,12 +170,13 @@ Deno.test("rejects oversized feeds without trusting content-length", async () =>
   assertMatch(result.health.message, /5 MiB/);
 });
 
-Deno.test("deduplicates links across sources", async () => {
+test("deduplicates links across sources", async () => {
   const feeds: FeedConfig[] = [
     { url: "https://one/rss", name: "One", type: "rss" },
     { url: "https://two/rss", name: "Two", type: "rss" },
   ];
-  const xml = "<rss><channel><item><title>Same</title><link>https://same</link>" +
+  const xml =
+    "<rss><channel><item><title>Same</title><link>https://same</link>" +
     "<description>Summary</description></item></channel></rss>";
   const result = await collectContent(feeds, {
     now: NOW,
@@ -180,7 +185,7 @@ Deno.test("deduplicates links across sources", async () => {
   assertEquals(result.items.length, 1);
 });
 
-Deno.test("confines article links to HTTP and resolves relative URLs", async () => {
+test("confines article links to HTTP and resolves relative URLs", async () => {
   const feed: FeedConfig = {
     url: "https://example.com/path/feed.xml",
     name: "Safe",
@@ -200,7 +205,7 @@ Deno.test("confines article links to HTTP and resolves relative URLs", async () 
   assertEquals(result.items[1].link, feed.url);
 });
 
-Deno.test("parses VTT captions and removes repeated rolling captions", () => {
+test("parses VTT captions and removes repeated rolling captions", () => {
   const text = parseVtt(`
     WEBVTT
 
@@ -216,7 +221,7 @@ Deno.test("parses VTT captions and removes repeated rolling captions", () => {
   assertEquals(text, "Hello world New line");
 });
 
-Deno.test("parses safe YouTube title, link, and upload metadata", () => {
+test("parses safe YouTube title, link, and upload metadata", () => {
   const metadata = parseYoutubeMetadata(
     "abc123\tResearch title\thttps://youtube.com/watch?v=abc123\t20261007\n" +
       "bad\tUnsafe\tjavascript:alert(1)\tNA",

@@ -28,7 +28,9 @@ export async function assertRejects(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (expected && !expected.test(message)) {
-      throw new Error(`Expected rejection matching ${expected}, received ${message}`);
+      throw new Error(`Expected rejection matching ${expected}, received ${message}`, {
+        cause: error,
+      });
     }
     return;
   }

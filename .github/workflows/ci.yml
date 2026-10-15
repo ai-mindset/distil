@@ -7,12 +7,29 @@ on:
 permissions:
   contents: read
 
+env:
+  BUN_RUNTIME_VERSION: 1.4.3
+
 jobs:
-  check:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.9.7
-      - run: deno task check
+          bun-version: canary
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run quality
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_RUNTIME_VERSION }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - run: bun run verify
